@@ -108,8 +108,6 @@ Once N confirmations reached:
 - The backend executes on the trading engine a short-sell
 - Once confirmed, a call is made to the CREATE function of the Token Swap Manager (TSM) which mints inverse tokens to the AU's address
 
-> TODO: update diagram
-
 ![](create_order.png)
 
 ### REDEEM
@@ -121,8 +119,6 @@ Once N confirmations reached:
 
 - The backend executes on the trading engine a long-repay
 - Once confirmed, a call is made to the REDEEM function of the Token Swap Manager (TSM) which transfers USDC from the Collateral Pool to the AU and burns the previously sent inverse tokens
-
-> TODO: update diagram
 
 ![](redeem_order.png)
 
