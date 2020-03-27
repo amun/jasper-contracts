@@ -143,6 +143,3 @@ The rebalance workflow is detailed below:
 - The trading engine then executing the short-sell / long-repay action
 - Once confirmed, a call to the TSM is made to initiates a calculation of the NAV/Cash Position of the Inverse Tokens.
 
-![](increase_exposure.png)
-
-![](decrease_exposure.png)
