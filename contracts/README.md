@@ -4,7 +4,7 @@
 
 - Creation and Redemption
 - Daily Rebalance and Threshold Rebalance
-- Compisition PCF And Funding Rate [WIP]
+- Composition PCF And Funding Rate [WIP]
 
 
 ### List of Smart Contracts:
@@ -29,7 +29,7 @@
   - All Contracts that live in the `contracts/` directory
 - Proxy Contract (i.e. Upgrade + Version Manager)
   - Handled Behind the Scenes by OpenZeppelin SDK
-  - `npm run upgrade` // upgrade contract 
+  - `npm run upgrade` // upgrade contract
 
 ### User Roles:
 

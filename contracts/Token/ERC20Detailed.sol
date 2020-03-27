@@ -2,28 +2,39 @@ pragma solidity ^0.5.0;
 
 import '@openzeppelin/contracts-ethereum-package/contracts/token/ERC20/IERC20.sol';
 import "@openzeppelin/upgrades/contracts/Initializable.sol";
+import '@openzeppelin/contracts-ethereum-package/contracts/ownership/Ownable.sol';
+import "../PersistentStorage.sol";
 
 
 /**
  * @dev Optional functions from the ERC20 standard.
  */
-contract ERC20Detailed is IERC20, Initializable {
+contract ERC20Detailed is IERC20, Initializable, Ownable {
     string private _name;
     string private _symbol;
     uint8 private _decimals;
+    PersistentStorage public _persistenStorage;
 
     /**
      * @dev Sets the values for `name`, `symbol`, and `decimals`. All three of
      * these values are immutable: they can only be set once during
      * construction.
      */
-    function initialize(string memory name, string memory symbol, uint8 decimals)
+    function initialize(
+      string memory name, 
+      string memory symbol, 
+      uint8 decimals, 
+      address persistenStorage,
+      address ownerAddress
+    )
       public
       initializer
     {
+        initialize(ownerAddress);
         _name = name;
         _symbol = symbol;
         _decimals = decimals;
+        _persistenStorage = PersistentStorage(persistenStorage);
     }
 
     /**
