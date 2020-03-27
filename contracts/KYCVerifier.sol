@@ -1,13 +1,13 @@
 pragma solidity ^0.5.0;
 
 import "@openzeppelin/upgrades/contracts/Initializable.sol";
-import "./Abstract/Storage.sol";
+import "./Abstract/InterfaceStorage.sol";
 
 contract KYCVerifier is Initializable {
-  Storage public persistentStorage;
+  InterfaceStorage public persistentStorage;
 
   function initialize(address _persistentStorage) public initializer {
-    persistentStorage = Storage(_persistentStorage);
+    persistentStorage = InterfaceStorage(_persistentStorage);
   }
 
   function isAddressWhitelisted(address userAddress) public view returns(bool) {

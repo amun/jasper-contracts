@@ -4,7 +4,7 @@ import "@openzeppelin/upgrades/contracts/Initializable.sol";
 import "@openzeppelin/contracts-ethereum-package/contracts/math/SafeMath.sol";
 
 import "./utils/Math.sol";
-import './utils/DateTimeLibrary.sol';
+import "./utils/DateTimeLibrary.sol";
 import "./PersistentStorage.sol";
 import "./Abstract/InterfaceInverseToken.sol";
 
@@ -275,6 +275,20 @@ contract CompositionCalculator is Initializable {
         cashFromTokenRedeem = DSMath.wmul(_tokenAmount, navPerToken);
     }
 
+    /**
+     * @dev Returns cash without fee
+     * @param _cash The cash provided to create token
+     * @param _mintingFee The minting fee to remove
+     */
+    function removeMintingFeeFromCash(uint256 _cash, uint256 _mintingFee)
+        public
+        pure
+        returns (uint256 cashAfterFee)
+    {
+        uint256 creationFeeInCash = DSMath.wmul(_cash, _mintingFee);
+        cashAfterFee = DSMath.sub(_cash, creationFeeInCash);
+    }
+
     //*************************************************************************
     //***************** Get values for last PCF *******************************
     //*************************************************************************
@@ -300,7 +314,20 @@ contract CompositionCalculator is Initializable {
     }
 
     /**
-     * @dev Returns the amount of token created by cash at price
+     * @dev Returns cash without fee
+     * @param _cash The cash provided to create token
+     */
+    function removeCurrentMintingFeeFromCash(uint256 _cash)
+        public
+        view
+        returns (uint256 cashAfterFee)
+    {
+        uint256 creationFee = persistentStorage.getMintingFee(_cash);
+        cashAfterFee = removeMintingFeeFromCash(_cash, creationFee);
+    }
+
+    /**
+     * @dev Returns the amount of token created by cash
      * @param _cash The cash provided to create token
      * @param _spotPrice The momentary price of the crypto
      */
@@ -315,6 +342,8 @@ contract CompositionCalculator is Initializable {
             totalTokenSupply,
             persistentStorage.getCashPositionPerToken()
         );
+
+        uint256 cashAfterFee = removeCurrentMintingFeeFromCash(_cash);
         uint256 balance = DSMath.wmul(
             totalTokenSupply,
             persistentStorage.getBalancePerToken()
@@ -323,7 +352,7 @@ contract CompositionCalculator is Initializable {
             cashPosition,
             balance,
             totalTokenSupply,
-            _cash,
+            cashAfterFee,
             _spotPrice
         );
     }
@@ -349,13 +378,14 @@ contract CompositionCalculator is Initializable {
             totalTokenSupply,
             persistentStorage.getBalancePerToken()
         );
-        cashFromTokenRedeem = getCashAmountCreatedByToken(
+        uint256 cashFromToken = getCashAmountCreatedByToken(
             cashPosition,
             balance,
             totalTokenSupply,
             _tokenAmount,
             _spotPrice
         );
+        cashFromTokenRedeem = removeCurrentMintingFeeFromCash(cashFromToken);
     }
 
     function getDaysSinceLastRebalance()
@@ -363,13 +393,13 @@ contract CompositionCalculator is Initializable {
         view
         returns (uint256 daysSinceLastRebalance)
     {
-      uint256 lastRebalanceDay = persistentStorage.lastActivityDay();
-      uint256 year = lastRebalanceDay.div(10000);
-      uint256 month = lastRebalanceDay.div(100) - year.mul(100);
-      uint256 day = lastRebalanceDay - year.mul(10000) - month.mul(100);
+        uint256 lastRebalanceDay = persistentStorage.lastActivityDay();
+        uint256 year = lastRebalanceDay.div(10000);
+        uint256 month = lastRebalanceDay.div(100) - year.mul(100);
+        uint256 day = lastRebalanceDay - year.mul(10000) - month.mul(100);
 
-      uint256 startDate = DateTimeLibrary.timestampFromDate(year,month,day);
-      daysSinceLastRebalance = (now - startDate) / 60 / 60 / 24;
+        uint256 startDate = DateTimeLibrary.timestampFromDate(year, month, day);
+        daysSinceLastRebalance = (now - startDate) / 60 / 60 / 24;
     }
 
     /**
@@ -413,6 +443,18 @@ contract CompositionCalculator is Initializable {
     }
 
     /**
+     * @dev Returns total balance
+     */
+    function getTotalBalance() external view returns (uint256 totalBalance) {
+        uint256 totalTokenSupply = inverseToken.totalSupply();
+        totalBalance = DSMath.wmul(
+            totalTokenSupply,
+            persistentStorage.getBalancePerToken()
+        );
+        return totalBalance;
+    }
+
+    /**
      * @dev Returns current PCF values for the given price
      * @param _price The momentary price of the crypto
      */
@@ -451,4 +493,27 @@ contract CompositionCalculator is Initializable {
                 minRebalanceAmount
             );
     }
+
+    /**
+     * @dev Returns total cash position
+     */
+    function getTotalCashPosition()
+        public
+        view
+        returns (uint256 totalCashPosition)
+    {
+        uint256 totalTokenSupply = inverseToken.totalSupply();
+        totalCashPosition = DSMath.wmul(
+            totalTokenSupply,
+            persistentStorage.getCashPositionPerToken()
+        );
+    }
+    function wmul(uint256 x, uint256 y) external pure returns (uint256 z) {
+        z = DSMath.wmul(x, y);
+    }
+
+    function wdiv(uint256 x, uint256 y) external pure returns (uint256 z) {
+        z = DSMath.wdiv(x, y);
+    }
+
 }

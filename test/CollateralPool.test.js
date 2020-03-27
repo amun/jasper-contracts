@@ -1,51 +1,80 @@
 const { accounts, contract } = require("@openzeppelin/test-environment");
 const { expect } = require("chai");
 
-const { expectRevert } = require("@openzeppelin/test-helpers");
+const { expectRevert, ether } = require("@openzeppelin/test-helpers");
 
 const ERC20WithMinting = contract.fromArtifact("InverseToken");
 const CollateralPool = contract.fromArtifact("CollateralPool");
 const PersistentStorage = contract.fromArtifact("PersistentStorage");
 const KYCVerifier = contract.fromArtifact("KYCVerifier");
+const sixtyPercentInArrayFraction = [3, 5];
 
 describe("CollateralPool", function() {
-  const [owner, user, anotherUser] = accounts;
+  const [owner, user, anotherUser, tokenSwap] = accounts;
   let token, kycVerifier, persistentStorage;
   this.timeout(5000);
+  const coldStorage = accounts[9];
+  const amountOfTokensToPool = 5;
+  const sixtyPercentOfAmountOfTokensToPool =
+    (amountOfTokensToPool * sixtyPercentInArrayFraction[0]) /
+    sixtyPercentInArrayFraction[1];
 
   beforeEach(async function() {
-    // initialize token
-    token = await ERC20WithMinting.new({ from: owner });
-    await token.initialize("Test Token", "TT", 18);
-    await token.mintTokens(user, 10, { from: owner });
 
     // initialize storage and kyc verifier
     persistentStorage = await PersistentStorage.new({ from: owner });
-    await persistentStorage.initialize(owner);
+    const managementFee = ether("7");
+    const minRebalanceAmount = ether("1");
+    await persistentStorage.initialize(owner, managementFee, minRebalanceAmount);
     await persistentStorage.setWhitelistedAddress(user, { from: owner }); // user is whitelisted
-    kycVerifier = await KYCVerifier.new({owner});
+    await persistentStorage.setTokenSwapManager(tokenSwap, {from: owner});
+
+    // initialize token
+    token = await ERC20WithMinting.new({ from: owner });
+    await token.initialize("Test Token", "TT", 18, persistentStorage.address, owner);
+    await token.mintTokens(user, 10, { from: owner });
+
+    kycVerifier = await KYCVerifier.new({ owner });
     await kycVerifier.initialize(persistentStorage.address);
 
     // initialize collateral pool
     this.contract = await CollateralPool.new({ from: owner });
-    await this.contract.initialize(owner, kycVerifier.address);
+    await this.contract.initialize(
+      owner,
+      kycVerifier.address,
+      persistentStorage.address,
+      coldStorage,
+      sixtyPercentInArrayFraction
+    );
   });
 
   describe("#moveTokenToPool", function() {
     beforeEach(async function() {
-      await token.approve(this.contract.address, 5, { from: user });
+      await token.approve(this.contract.address, amountOfTokensToPool, {
+        from: user
+      });
     });
 
     it("does not allow a non owner to move tokens to pool", async function() {
       await expectRevert(
-        this.contract.moveTokenToPool(token.address, user, 5, { from: user }),
-        "Ownable: caller is not the owner"
+        this.contract.moveTokenToPool(
+          token.address,
+          user,
+          amountOfTokensToPool,
+          { from: user }
+        ),
+        "caller is not the owner or token swap manager"
       );
     });
 
     it("does not allow a non whitelisted address to move tokens to pool", async function() {
       await expectRevert(
-        this.contract.moveTokenToPool(token.address, anotherUser, 5, { from: owner }),
+        this.contract.moveTokenToPool(
+          token.address,
+          anotherUser,
+          amountOfTokensToPool,
+          { from: owner }
+        ),
         "only whitelisted address are allowed to move tokens to pool"
       );
     });
@@ -57,39 +86,140 @@ describe("CollateralPool", function() {
       );
     });
 
-    it("moves transfers from user to pool", async function() {
-      await this.contract.moveTokenToPool(token.address, user, 5, { from: owner });
+    it("moves transfers from user to pool taking a percentage to cold storage", async function() {
+      await this.contract.moveTokenToPool(
+        token.address,
+        user,
+        amountOfTokensToPool,
+        { from: owner }
+      );
       const poolFundsInTokens = await token.balanceOf(this.contract.address);
+      const coldStorageTokens = await token.balanceOf(coldStorage);
 
-      expect(poolFundsInTokens).to.be.bignumber.equal("5");
+      expect(poolFundsInTokens).to.be.bignumber.equal(
+        (amountOfTokensToPool - coldStorageTokens.toNumber()).toString()
+      );
+      expect(coldStorageTokens).to.be.bignumber.equal(
+        sixtyPercentOfAmountOfTokensToPool.toString()
+      );
     });
   });
 
   describe("#moveTokenfromPool", function() {
     beforeEach(async function() {
-      await token.approve(this.contract.address, 5, { from: user });
-      await this.contract.moveTokenToPool(token.address, user, 5, { from: owner });
+      await token.approve(this.contract.address, amountOfTokensToPool, {
+        from: user
+      });
+      await this.contract.moveTokenToPool(
+        token.address,
+        user,
+        amountOfTokensToPool,
+        { from: owner }
+      );
     });
 
     it("does not allow a non owner to move tokens from pool", async function() {
       await expectRevert(
-        this.contract.moveTokenfromPool(token.address, anotherUser, 5, { from: anotherUser }),
-        "Ownable: caller is not the owner"
+        this.contract.moveTokenfromPool(
+          token.address,
+          anotherUser,
+          amountOfTokensToPool,
+          { from: anotherUser }
+        ),
+        "caller is not the owner or token swap manager"
       );
     });
 
     it("cannot transfer more funds from pool than owned", async function() {
       await expectRevert(
-        this.contract.moveTokenfromPool(token.address, anotherUser, 8, { from: owner }),
+        this.contract.moveTokenfromPool(token.address, anotherUser, 8, {
+          from: owner
+        }),
         "cannot move more funds than owned"
       );
     });
 
     it("moves transfers from pool to destination address", async function() {
-      await this.contract.moveTokenfromPool(token.address, anotherUser, 5, { from: owner });
+      const contractTokenBalance = await token.balanceOf(this.contract.address);
+      await this.contract.moveTokenfromPool(
+        token.address,
+        anotherUser,
+        contractTokenBalance,
+        { from: owner }
+      );
       const anotherUserTokens = await token.balanceOf(anotherUser);
 
-      expect(anotherUserTokens).to.be.bignumber.equal("5");
+      expect(anotherUserTokens).to.be.bignumber.equal(contractTokenBalance);
+    });
+  });
+
+  describe("#setColdStorage", function() {
+    it("does NOT allow a NON owner to set a new cold storage", async function() {
+      await expectRevert(
+        this.contract.setColdStorage(anotherUser, { from: anotherUser }),
+        "Ownable: caller is not the owner"
+      );
+    });
+
+    it("does NOT allow to set empty cold storage address", async function() {
+      await expectRevert(
+        this.contract.setColdStorage(
+          "0x0000000000000000000000000000000000000000",
+          { from: owner }
+        ),
+        "address cannot be empty"
+      );
+    });
+
+    it("allows owner to set a new cold storage address", async function() {
+      this.contract.setColdStorage(anotherUser, { from: owner });
+
+      const coldStorage = await this.contract.coldStorage();
+      expect(coldStorage).to.be.equal(anotherUser);
+    });
+  });
+
+  describe("#setPercentageOfFundsForColdStorage", function() {
+    it("does NOT allow a NON owner to set percentage of funds for cold storage", async function() {
+      await expectRevert(
+        this.contract.setPercentageOfFundsForColdStorage([1, 2], {
+          from: anotherUser
+        }),
+        "Ownable: caller is not the owner"
+      );
+    });
+
+    it("does NOT allow to set empty values", async function() {
+      await expectRevert(
+        this.contract.setPercentageOfFundsForColdStorage([0, 2], {
+          from: owner
+        }),
+        "none of the values can be zero"
+      );
+      await expectRevert(
+        this.contract.setPercentageOfFundsForColdStorage([1, 0], {
+          from: owner
+        }),
+        "none of the values can be zero"
+      );
+    });
+
+    it("allows owner to set a new percentage funds for cold storage address values", async function() {
+      this.contract.setPercentageOfFundsForColdStorage([1, 2], { from: owner });
+
+      const percentageOfFundsForColdStorageFirstElement = await this.contract.percentageOfFundsForColdStorage(
+        0
+      );
+      const percentageOfFundsForColdStorageSecondElement = await this.contract.percentageOfFundsForColdStorage(
+        1
+      );
+
+      expect(percentageOfFundsForColdStorageFirstElement).to.be.bignumber.equal(
+        "1"
+      );
+      expect(
+        percentageOfFundsForColdStorageSecondElement
+      ).to.be.bignumber.equal("2");
     });
   });
 });

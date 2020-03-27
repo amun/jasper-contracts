@@ -1,6 +1,6 @@
 node_modules
-Contracts/.openzeppelin/.session
-Contracts/.openzeppelin/dev-*.json
+.openzeppelin/.session
+.openzeppelin/dev-*.json
 build
 
 *vscode*

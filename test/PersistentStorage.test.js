@@ -1,9 +1,9 @@
 const { accounts, contract } = require("@openzeppelin/test-environment");
 const { expect } = require("chai");
 
-const { expectEvent, expectRevert, time } = require("@openzeppelin/test-helpers");
+const { expectEvent, expectRevert, time, ether } = require("@openzeppelin/test-helpers");
 
-const PersitentStorage = contract.fromArtifact("PersistentStorage");
+const PersistentStorage = contract.fromArtifact("PersistentStorage");
 
 const getDateForBlockTime = async () => {
   const latestBlockTime = await time.latest();
@@ -16,12 +16,13 @@ const getDateForBlockTime = async () => {
 
   return year * 10000 + month * 100 + day;
 };
-describe("PersitentStorage", function () {
+describe("PersistentStorage", function () {
   const [owner, notOwner, notListed] = accounts;
-
+  const managementFee = ether("7");
+  const minRebalanceAmount = ether("1");
   beforeEach(async function () {
-    this.contract = await PersitentStorage.new({ from: owner });
-    await this.contract.initialize(owner);
+    this.contract = await PersistentStorage.new({ from: owner });
+    await this.contract.initialize(owner, managementFee, minRebalanceAmount);
   });
 
   describe("#setWhitelistedAddress", function () {
@@ -121,23 +122,23 @@ describe("PersitentStorage", function () {
       );
     });
 
-    it("sets Accounting values and allows for overriding", async function () {
+    it("adds Accounting values and to same date", async function () {
       await this.contract.setAccounting(1, 2, 3, 4, {
         from: owner
       });
 
-      const result = await this.contract.getAccounting(await getDateForBlockTime());
-      for (let index = 0; index < result.length; index++) {
-        expect(result[index]).to.be.bignumber.equal(index + 1);
+      let result = await this.contract.getAccounting(await getDateForBlockTime());
+      for (let index = 0; index < Object.keys(result).length; index++) {
+        expect(result[index]).to.be.bignumber.equal(String(index + 1));
       }
-
-      // overriding
+      // add
       await this.contract.setAccounting(6, 7, 8, 9, {
         from: owner
       });
+      result = await this.contract.getAccounting(await getDateForBlockTime());
 
-      for (let index = 0; index < result.length; index++) {
-        expect(result[index]).to.be.bignumber.equal(index + 6);
+      for (let index = 0; index < Object.keys(result).length; index++) {
+        expect(result[index]).to.be.bignumber.equal(String(index + 6));
       }
     });
 
@@ -161,6 +162,31 @@ describe("PersitentStorage", function () {
         today: (await getDateForBlockTime()).toString()
       });
     });
+
+    it("setAccountingForLastActivityDay does not update lastActivityDay", async function () {
+
+      await this.contract.setAccounting(1, 2, 3, 4, {
+        from: owner
+      });
+      const blockTimeBefore = await getDateForBlockTime()
+
+      await time.increase(time.duration.days(1));
+      const blockTimeAfter = await getDateForBlockTime()
+
+      await this.contract.setAccountingForLastActivityDay(1, 2, 3, 4, {
+        from: owner
+      });
+      const resultLastActivityDayBefore = await this.contract.lastActivityDay();
+      await getDateForBlockTime()
+      await this.contract.setAccounting(1, 2, 3, 4, {
+        from: owner
+      });
+      const resultLastActivityDayAfter = await this.contract.lastActivityDay();
+      expect(resultLastActivityDayBefore.toNumber()).to.be.equal(blockTimeBefore);
+
+      expect(resultLastActivityDayAfter.toNumber()).to.be.equal(blockTimeAfter);
+    });
+
   });
 
   describe("#setMinRebalanceAmount", function () {
@@ -234,6 +260,163 @@ describe("PersitentStorage", function () {
         from: notListed
       });
       expect(resultLendingFee).to.be.bignumber.equal(lendingFee.toString());
+    });
+  });
+
+  describe("#setManagementFee", function () {
+    const newManagementFee = "10";
+    it("does not allow a non owner to set managementFee", async function () {
+      await expectRevert(
+        this.contract.setManagementFee(newManagementFee, { from: notOwner }),
+        "Ownable: caller is not the owner"
+      );
+    });
+
+    it("sets managementFee", async function () {
+      await this.contract.setManagementFee(newManagementFee, { from: owner });
+
+      const managementFee = await this.contract.managementFee();
+      expect(managementFee).to.be.bignumber.equal(newManagementFee);
+    });
+  });
+  describe("#getManagementFee", function () {
+    it("gets price", async function () {
+      const resultManagementFee = await this.contract.getManagementFee({
+        from: notListed
+      });
+      expect(resultManagementFee).to.be.bignumber.equal(managementFee);
+    });
+  });
+
+  describe("#getTotalFee", function () {
+    it("gets total fee with lendingFee set in accounting", async function () {
+      const lendingFee = ether("2.5")
+      await this.contract.setAccounting(1, 2, 3, lendingFee, {
+        from: owner
+      });
+      const expectedTotalFee = ether("9.5") //7+2.5
+      const resultTotalFee = await this.contract.getTotalFee({
+        from: notListed
+      });
+      expect(resultTotalFee).to.be.bignumber.equal(expectedTotalFee);
+    });
+  });
+  describe("#getMintingFee", function () {
+    it("gets minting fee for 0-50k", async function () {
+      const expectedTotalFee = ether("0.003");
+      const cash = ether("50000");
+
+      const resultMintingFee = await this.contract.getMintingFee(cash, {
+        from: notListed
+      });
+      expect(resultMintingFee).to.be.bignumber.equal(expectedTotalFee);
+    });
+    it("gets minting fee for 50-100k", async function () {
+      const expectedTotalFee = ether("0.002");
+      const cash = ether("100000");
+      const resultMintingFee = await this.contract.getMintingFee(cash, {
+        from: notListed
+      });
+      expect(resultMintingFee).to.be.bignumber.equal(expectedTotalFee);
+    });
+    it("gets minting fee for bigger then 100k", async function () {
+      const expectedTotalFee = ether("0.001");
+      const cash = ether("100001");
+      const resultMintingFee = await this.contract.getMintingFee(cash, {
+        from: notListed
+      });
+      expect(resultMintingFee).to.be.bignumber.equal(expectedTotalFee);
+    });
+  });
+
+  describe("#setLastMintingFee", function () {
+    const newLastMintingFee = "10";
+    it("does not allow a non owner to set LastMintingFee", async function () {
+      await expectRevert(
+        this.contract.setLastMintingFee(newLastMintingFee, { from: notOwner }),
+        "Ownable: caller is not the owner"
+      );
+    });
+
+    it("sets LastMintingFee", async function () {
+      await this.contract.setLastMintingFee(newLastMintingFee, { from: owner });
+
+      const managementFee = await this.contract.mintingFee(String(2 ^ 256 - 1));
+      expect(managementFee).to.be.bignumber.equal(newLastMintingFee);
+    });
+  });
+  describe("#addMintingFeeBracket", function () {
+    const newMintingFeeLimit = ether("100001");
+    const newMintingFee = ether("5");
+
+    it("does not allow a non owner to add MintingFee", async function () {
+      await expectRevert(
+        this.contract.addMintingFeeBracket(newMintingFeeLimit, newMintingFee, { from: notOwner }),
+        "Ownable: caller is not the owner"
+      );
+    });
+
+    it("adds minting fee", async function () {
+      await this.contract.addMintingFeeBracket(newMintingFeeLimit, newMintingFee, { from: owner });
+
+      const mintingFeeLimit = await this.contract.mintingFeeBracket("2");
+      expect(mintingFeeLimit).to.be.bignumber.equal(newMintingFeeLimit);
+      const mintingFee = await this.contract.mintingFee(newMintingFeeLimit);
+      expect(mintingFee).to.be.bignumber.equal(newMintingFee);
+    });
+    it("does not allow to add minting fee smaller then last", async function () {
+      await expectRevert(
+        this.contract.addMintingFeeBracket(ether("99999"), newMintingFee, { from: owner }),
+        "New minting fee bracket needs to be bigger then last one."
+      );
+    });
+  });
+  describe("#deleteLastMintingFeeBracket", function () {
+    it("does not allow a non owner to delete minting fee", async function () {
+      await expectRevert(
+        this.contract.deleteLastMintingFeeBracket({ from: notOwner }),
+        "Ownable: caller is not the owner"
+      );
+    });
+
+    it("deletes minting fee", async function () {
+      await this.contract.deleteLastMintingFeeBracket({ from: owner });
+      const mintingFeeLimit = await this.contract.mintingFeeBracket("1");
+      expect(mintingFeeLimit).to.be.bignumber.equal("0");
+      const mintingFee = await this.contract.mintingFee(ether("100000"));
+      expect(mintingFee).to.be.bignumber.equal("0");
+    });
+  });
+  describe("#changeMintingLimit", function () {
+    const newMintingFeeLimit = ether("100001");
+    const newMintingFee = ether("5");
+    const entryToChange = "1";
+    it("does not allow a non owner to change minting fee", async function () {
+      await expectRevert(
+        this.contract.changeMintingLimit(entryToChange, newMintingFeeLimit, newMintingFee, { from: notOwner }),
+        "Ownable: caller is not the owner"
+      );
+    });
+
+    it("change minting fee", async function () {
+      await this.contract.changeMintingLimit(entryToChange, newMintingFeeLimit, newMintingFee, { from: owner });
+
+      const mintingFeeLimit = await this.contract.mintingFeeBracket(entryToChange);
+      expect(mintingFeeLimit).to.be.bignumber.equal(newMintingFeeLimit);
+      const mintingFee = await this.contract.mintingFee(newMintingFeeLimit);
+      expect(mintingFee).to.be.bignumber.equal(newMintingFee);
+    });
+    it("does not allow to change minting fee smaller then last", async function () {
+      await expectRevert(
+        this.contract.changeMintingLimit(entryToChange, ether("49000"), newMintingFee, { from: owner }),
+        "New minting fee bracket needs to be bigger then last one."
+      );
+    });
+    it("does not allow to change minting fee bigger then next", async function () {
+      await expectRevert(
+        this.contract.changeMintingLimit("0", ether("100001"), newMintingFee, { from: owner }),
+        "New minting fee bracket needs to be smaller then next one."
+      );
     });
   });
 });

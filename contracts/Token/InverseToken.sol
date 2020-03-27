@@ -1,11 +1,11 @@
 pragma solidity ^0.5.0;
 
-import './Token/ERC20.sol';
+import './ERC20.sol';
 
 contract InverseToken is ERC20 {
   function mintTokens(address destinationAddress, uint amountToMint)
     public
-    // Add Modifier To Limit Minting to Inverse Providers
+    onlyOwnerOrTokenSwap()
     returns (bool)
   {
     // Mint Tokens on Successful Creation order
@@ -16,12 +16,17 @@ contract InverseToken is ERC20 {
 
   function burnTokens(address fromAddress, uint amountToBurn)
     public
-    // Add Modifier to Limit Burning to Inverse Providers
+    onlyOwnerOrTokenSwap()
     returns (bool)
   {
     // Burn Tokens on Successful Redemption Order
     _burn(fromAddress, amountToBurn);
     return true;
+  }
+
+  modifier onlyOwnerOrTokenSwap() {
+      require(isOwner() || _msgSender() == _persistenStorage.tokenSwapManager(), "caller is not the owner or token swap manager");
+      _;
   }
 
   uint256[50] private ______gap;

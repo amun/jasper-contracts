@@ -1,5 +1,6 @@
 const { accounts, contract } = require("@openzeppelin/test-environment");
 const { expect } = require("chai");
+const { ether } = require("@openzeppelin/test-helpers");
 
 const PersistentStorage = contract.fromArtifact("PersistentStorage");
 const KYCVerifier = contract.fromArtifact("KYCVerifier");
@@ -8,8 +9,10 @@ describe("KYCVerifier", function() {
   const [owner, listedUser, unlistedUser] = accounts;
 
   beforeEach(async function() {
-    persistentStorage = await PersistentStorage.new({ from: owner });
-    await persistentStorage.initialize(owner);
+    const persistentStorage = await PersistentStorage.new({ from: owner });
+    const managementFee = ether("7");
+    const minRebalanceAmount = ether("1");
+    await persistentStorage.initialize(owner, managementFee, minRebalanceAmount);
     await persistentStorage.setWhitelistedAddress(listedUser, { from: owner });
 
     this.contract = await KYCVerifier.new({ from: owner });
