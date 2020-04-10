@@ -4,12 +4,12 @@ const { expect } = require("chai");
 const { expectRevert, ether } = require("@openzeppelin/test-helpers");
 
 const ERC20WithMinting = contract.fromArtifact("InverseToken");
-const CollateralPool = contract.fromArtifact("CollateralPool");
+const CashPool = contract.fromArtifact("CashPool");
 const PersistentStorage = contract.fromArtifact("PersistentStorage");
 const KYCVerifier = contract.fromArtifact("KYCVerifier");
 const sixtyPercentInArrayFraction = [3, 5];
 
-describe("CollateralPool", function() {
+describe("CashPool", function() {
   const [owner, user, anotherUser, tokenSwap] = accounts;
   let token, kycVerifier, persistentStorage;
   this.timeout(5000);
@@ -20,25 +20,34 @@ describe("CollateralPool", function() {
     sixtyPercentInArrayFraction[1];
 
   beforeEach(async function() {
-
     // initialize storage and kyc verifier
     persistentStorage = await PersistentStorage.new({ from: owner });
     const managementFee = ether("7");
     const minRebalanceAmount = ether("1");
-    await persistentStorage.initialize(owner, managementFee, minRebalanceAmount);
+    await persistentStorage.initialize(
+      owner,
+      managementFee,
+      minRebalanceAmount
+    );
     await persistentStorage.setWhitelistedAddress(user, { from: owner }); // user is whitelisted
-    await persistentStorage.setTokenSwapManager(tokenSwap, {from: owner});
+    await persistentStorage.setTokenSwapManager(tokenSwap, { from: owner });
 
     // initialize token
     token = await ERC20WithMinting.new({ from: owner });
-    await token.initialize("Test Token", "TT", 18, persistentStorage.address, owner);
+    await token.initialize(
+      "Test Token",
+      "TT",
+      18,
+      persistentStorage.address,
+      owner
+    );
     await token.mintTokens(user, 10, { from: owner });
 
     kycVerifier = await KYCVerifier.new({ owner });
     await kycVerifier.initialize(persistentStorage.address);
 
-    // initialize collateral pool
-    this.contract = await CollateralPool.new({ from: owner });
+    // initialize cash pool
+    this.contract = await CashPool.new({ from: owner });
     await this.contract.initialize(
       owner,
       kycVerifier.address,
@@ -82,7 +91,7 @@ describe("CollateralPool", function() {
     it("cannot transfer more funds to pool than allowed", async function() {
       await expectRevert(
         this.contract.moveTokenToPool(token.address, user, 8, { from: owner }),
-        "cannot move more funds than allowed"
+        "ERC20: transfer amount exceeds allowance -- Reason given: ERC20: transfer amount exceeds allowance"
       );
     });
 
@@ -135,7 +144,7 @@ describe("CollateralPool", function() {
         this.contract.moveTokenfromPool(token.address, anotherUser, 8, {
           from: owner
         }),
-        "cannot move more funds than owned"
+        "ERC20: transfer amount exceeds balance -- Reason given: ERC20: transfer amount exceeds balance"
       );
     });
 
@@ -189,23 +198,29 @@ describe("CollateralPool", function() {
       );
     });
 
-    it("does NOT allow to set empty values", async function() {
+    it("does NOT allow to set empty denominator", async function() {
       await expectRevert(
-        this.contract.setPercentageOfFundsForColdStorage([0, 2], {
+        this.contract.setPercentageOfFundsForColdStorage([0, 0], {
           from: owner
         }),
-        "none of the values can be zero"
+        "denominator should not be zero"
       );
+    });
+
+    it("cannot set more than 100% of funds to move to cold wallet", async function() {
       await expectRevert(
-        this.contract.setPercentageOfFundsForColdStorage([1, 0], {
+        this.contract.setPercentageOfFundsForColdStorage([2, 1], {
           from: owner
         }),
-        "none of the values can be zero"
+        "cannot set more than 100% for coldstorage"
       );
     });
 
     it("allows owner to set a new percentage funds for cold storage address values", async function() {
-      this.contract.setPercentageOfFundsForColdStorage([1, 2], { from: owner });
+      const zeroPercentInFraction = [0, 1];
+      this.contract.setPercentageOfFundsForColdStorage(zeroPercentInFraction, {
+        from: owner
+      });
 
       const percentageOfFundsForColdStorageFirstElement = await this.contract.percentageOfFundsForColdStorage(
         0
@@ -215,11 +230,11 @@ describe("CollateralPool", function() {
       );
 
       expect(percentageOfFundsForColdStorageFirstElement).to.be.bignumber.equal(
-        "1"
+        "0"
       );
       expect(
         percentageOfFundsForColdStorageSecondElement
-      ).to.be.bignumber.equal("2");
+      ).to.be.bignumber.equal("1");
     });
   });
 });

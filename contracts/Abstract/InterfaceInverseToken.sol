@@ -1,7 +1,9 @@
 pragma solidity ^0.5.0;
 
+
 interface InterfaceInverseToken {
     function mintTokens(address, uint256) external returns (bool);
+
     function burnTokens(address, uint256) external returns (bool);
 
     /**

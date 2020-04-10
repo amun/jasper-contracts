@@ -40,17 +40,17 @@ describe("CompositionCalculator", function() {
     await this.contract.initialize(this.storage.address, this.token.address);
   });
 
-  describe("#getNAV", function() {
+  describe("#getNetTokenValue", function() {
     it("does match expected value", async function() {
       const cashPosition = getEth(200000);
       const balance = getEth(100);
       const price = getEth(1000);
-      const expectedNAV = getEth(100000);
+      const expectedNetTokenValue = getEth(100000);
 
-      const nav = await this.contract.getNAV(cashPosition, balance, price);
+      const netTokenValue = await this.contract.getNetTokenValue(cashPosition, balance, price);
 
-      expect(getNumberWithDecimal(expectedNAV)).to.be.equal(
-        getNumberWithDecimal(nav)
+      expect(getNumberWithDecimal(expectedNetTokenValue)).to.be.equal(
+        getNumberWithDecimal(netTokenValue)
       );
     });
   });
@@ -83,13 +83,13 @@ describe("CompositionCalculator", function() {
 
   describe("#getNeededChangeInBalanceToRebalance", function() {
     it("does match expected positive change", async function() {
-      const nav = getEth(110000);
+      const netTokenValue = getEth(110000);
       const balance = getEth(100);
       const price = getEth(900);
       const expectedChange = "22.222222222222222222";
 
       const result = await this.contract.getNeededChangeInBalanceToRebalance(
-        nav,
+        netTokenValue,
         balance,
         price
       );
@@ -100,13 +100,13 @@ describe("CompositionCalculator", function() {
     });
 
     it("does match expected negative change", async function() {
-      const nav = getEth(90000);
+      const netTokenValue = getEth(90000);
       const balance = getEth(100);
       const price = getEth(1100);
       const expectedChange = "18.181818181818181818";
 
       const result = await this.contract.getNeededChangeInBalanceToRebalance(
-        nav,
+        netTokenValue,
         balance,
         price
       );
@@ -142,7 +142,7 @@ describe("CompositionCalculator", function() {
         from: owner
       });
       const [
-        endNav,
+        endNetTokenValue,
         endBalance,
         endCashPosition,
         feeInFiat,
@@ -152,7 +152,7 @@ describe("CompositionCalculator", function() {
       ] = Object.values(result);
 
       expect(changeInBalance.toNumber()).to.be.equal(0);
-      expect(new BigNumber(getNumberWithDecimal(endNav)).eq(100000)).to.be.true;
+      expect(new BigNumber(getNumberWithDecimal(endNetTokenValue)).eq(100000)).to.be.true;
     });
   });
 
@@ -174,7 +174,7 @@ describe("CompositionCalculator", function() {
         minRebalanceAmount
       );
       const [
-        endNav,
+        endNetTokenValue,
         endBalance,
         endCashPosition,
         feeInFiat,
@@ -184,8 +184,8 @@ describe("CompositionCalculator", function() {
       ] = Object.values(result);
 
       expect(changeInBalance.toNumber()).to.be.equal(0);
-      //nav should get smaller because of fee
-      expect(new BigNumber(getNumberWithDecimal(endNav)).lt(100000)).to.be.true;
+      //netTokenValue should get smaller because of fee
+      expect(new BigNumber(getNumberWithDecimal(endNetTokenValue)).lt(100000)).to.be.true;
     });
     it("does change positive when smaller price", async function() {
       const balance = getEth(100);
@@ -204,7 +204,7 @@ describe("CompositionCalculator", function() {
         minRebalanceAmount
       );
       const [
-        endNav,
+        endNetTokenValue,
         endBalance,
         endCashPosition,
         feeInFiat,
@@ -218,7 +218,7 @@ describe("CompositionCalculator", function() {
       expect(getNumberWithDecimal(feeInFiat)).to.be.equal(
         "6.164383561643880000"
       );
-      expect(new BigNumber(getNumberWithDecimal(endNav)).gt(100000)).to.be.true;
+      expect(new BigNumber(getNumberWithDecimal(endNetTokenValue)).gt(100000)).to.be.true;
       expect(new BigNumber(endBalance).gt(balance)).to.be.true;
       expect(new BigNumber(endCashPosition).gt(cashPosition)).to.be.true;
       expect(isChangeInBalanceNeg).to.be.false;
@@ -241,7 +241,7 @@ describe("CompositionCalculator", function() {
         minRebalanceAmount
       );
       const [
-        endNav,
+        endNetTokenValue,
         endBalance,
         endCashPosition,
         feeInFiat,
@@ -255,7 +255,7 @@ describe("CompositionCalculator", function() {
       expect(getNumberWithDecimal(feeInFiat)).to.be.equal(
         "7.534246575342520000"
       );
-      expect(new BigNumber(getNumberWithDecimal(endNav)).lt(100000)).to.be.true;
+      expect(new BigNumber(getNumberWithDecimal(endNetTokenValue)).lt(100000)).to.be.true;
       expect(new BigNumber(endBalance).lt(balance)).to.be.true;
       expect(new BigNumber(endCashPosition).lt(cashPosition)).to.be.true;
       expect(isChangeInBalanceNeg).to.be.true;
@@ -389,8 +389,8 @@ describe("CompositionCalculator", function() {
       expect(getNumberWithDecimal(cashFromTokenRedeem)).to.be.equal(getNumberWithDecimal(cashPosition - spot));
     });
   });
-  describe("#getCurrentNAV", function() {
-    it("Should match nav.", async function() {
+  describe("#getCurrentNetTokenValue", function() {
+    it("Should match netTokenValue.", async function() {
       const cashPosition = getEth(2 * 1000);
       const balance = getEth(1);
       const price = getEth(1000);
@@ -402,7 +402,7 @@ describe("CompositionCalculator", function() {
         from: owner
       });
 
-      const result = await this.contract.getCurrentNAV();
+      const result = await this.contract.getCurrentNetTokenValue();
       expect(result.toString()).to.be.equal(getEth(1000).toFixed());
     });
     it("Should fail when cash position is small then balance.", async function() {
@@ -417,12 +417,12 @@ describe("CompositionCalculator", function() {
         from: owner
       });
       await expectRevert(
-        this.contract.getCurrentNAV(),
+        this.contract.getCurrentNetTokenValue(),
         "The cash position needs to be bigger then the borrowed crypto is worth"
       );
     });
   });
-  
+
   describe("#getCurrentTokenAmountCreatedByCash", function() {
     const fee = getEth(0);
     const totalTokenSupply = getEth(1);
@@ -672,28 +672,28 @@ describe("CompositionCalculator", function() {
   });
   describe("#getTotalBalance", function() {
     it("Should return total balance.", async function() {
-      const balancePerToken = "3";
-      await this.storage.setAccounting(1, 2, balancePerToken, 4, {
+      const balancePerTokenUnit = "3";
+      await this.storage.setAccounting(1, 2, balancePerTokenUnit, 4, {
         from: owner
       });
       await this.token.mintTokens(owner, getEth(1), {
         from: owner
       });
       const result = await this.contract.getTotalBalance();
-      expect(result.toString()).to.be.equal(balancePerToken);
+      expect(result.toString()).to.be.equal(balancePerTokenUnit);
     });
   });
   describe("#getTotalCashPosition", function() {
     it("Should return total cash position.", async function() {
-      const cashPositionPerToken = getEth(4).toFixed();
-      await this.storage.setAccounting(1, cashPositionPerToken, 3, 4, {
+      const cashPositionPerTokenUnit = getEth(4).toFixed();
+      await this.storage.setAccounting(1, cashPositionPerTokenUnit, 3, 4, {
         from: owner
       });
       await this.token.mintTokens(owner, getEth(1), {
         from: owner
       });
       const result = await this.contract.getTotalCashPosition();
-      expect(result.toString()).to.be.equal(cashPositionPerToken);
+      expect(result.toString()).to.be.equal(cashPositionPerTokenUnit);
     });
   });
 });

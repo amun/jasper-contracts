@@ -1,35 +1,36 @@
 /**
  *Submitted for verification at Etherscan.io on 2020-03-03
-*/
+ */
 
 /**
  *Submitted for verification at Etherscan.io on 2018-08-03
-*/
+ */
 
 pragma solidity ^0.5.0;
+
 
 // File: contracts/OwnableUSDCT.sol
 
 /**
-* Copyright CENTRE SECZ 2018
-*
-* Permission is hereby granted, free of charge, to any person obtaining a copy
-* of this software and associated documentation files (the "Software"), to deal
-* in the Software without restriction, including without limitation the rights
-* to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-* copies of the Software, and to permit persons to whom the Software is furnished to
-* do so, subject to the following conditions:
-*
-* The above copyright notice and this permission notice shall be included in all
-* copies or substantial portions of the Software.
-*
-* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
-* WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
-* CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-*/
+ * Copyright CENTRE SECZ 2018
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is furnished to
+ * do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+ * WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
 
 /**
  * @title OwnableUSDCT
@@ -40,88 +41,86 @@ pragma solidity ^0.5.0;
  * 3) consolidate OwnableUSDCTStorage into this contract
  */
 contract OwnableUSDCT {
+    // Owner of the contract
+    address private _owner;
 
-  // Owner of the contract
-  address private _owner;
+    /**
+     * @dev Event to show ownership has been transferred
+     * @param previousOwner representing the address of the previous owner
+     * @param newOwner representing the address of the new owner
+     */
+    event OwnershipTransferred(address previousOwner, address newOwner);
 
-  /**
-  * @dev Event to show ownership has been transferred
-  * @param previousOwner representing the address of the previous owner
-  * @param newOwner representing the address of the new owner
-  */
-  event OwnershipTransferred(address previousOwner, address newOwner);
+    /**
+     * @dev The constructor sets the original owner of the contract to the sender account.
+     */
+    function initialize() public {
+        setOwner(msg.sender);
+    }
 
-  /**
-  * @dev The constructor sets the original owner of the contract to the sender account.
-  */
-  constructor() public {
-    setOwner(msg.sender);
-  }
+    /**
+     * @dev Tells the address of the owner
+     * @return the address of the owner
+     */
+    function owner() public view returns (address) {
+        return _owner;
+    }
 
-  /**
- * @dev Tells the address of the owner
- * @return the address of the owner
- */
-  function owner() public view returns (address) {
-    return _owner;
-  }
+    /**
+     * @dev Sets a new owner address
+     */
+    function setOwner(address newOwner) internal {
+        _owner = newOwner;
+    }
 
-  /**
-   * @dev Sets a new owner address
-   */
-  function setOwner(address newOwner) internal {
-    _owner = newOwner;
-  }
+    /**
+     * @dev Throws if called by any account other than the owner.
+     */
+    modifier onlyOwner() {
+        require(msg.sender == owner());
+        _;
+    }
 
-  /**
-  * @dev Throws if called by any account other than the owner.
-  */
-  modifier onlyOwner() {
-    require(msg.sender == owner());
-    _;
-  }
-
-  /**
-   * @dev Allows the current owner to transfer control of the contract to a newOwner.
-   * @param newOwner The address to transfer ownership to.
-   */
-  function transferOwnership(address newOwner) public onlyOwner {
-    require(newOwner != address(0));
-    emit OwnershipTransferred(owner(), newOwner);
-    setOwner(newOwner);
-  }
+    /**
+     * @dev Allows the current owner to transfer control of the contract to a newOwner.
+     * @param newOwner The address to transfer ownership to.
+     */
+    function transferOwnership(address newOwner) public onlyOwner {
+        require(newOwner != address(0));
+        emit OwnershipTransferred(owner(), newOwner);
+        setOwner(newOwner);
+    }
 }
+
 
 // File: contracts/Blacklistable.sol
 
 /**
-* Copyright CENTRE SECZ 2018
-*
-* Permission is hereby granted, free of charge, to any person obtaining a copy
-* of this software and associated documentation files (the "Software"), to deal
-* in the Software without restriction, including without limitation the rights
-* to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-* copies of the Software, and to permit persons to whom the Software is furnished to
-* do so, subject to the following conditions:
-*
-* The above copyright notice and this permission notice shall be included in all
-* copies or substantial portions of the Software.
-*
-* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
-* WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
-* CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-*/
-
+ * Copyright CENTRE SECZ 2018
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is furnished to
+ * do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+ * WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
 
 /**
  * @title Blacklistable Token
  * @dev Allows accounts to be blacklisted by a "blacklister" role
-*/
+ */
 contract Blacklistable is OwnableUSDCT {
-
     address public blacklister;
     mapping(address => bool) internal blacklisted;
 
@@ -131,7 +130,7 @@ contract Blacklistable is OwnableUSDCT {
 
     /**
      * @dev Throws if called by any account other than the blacklister
-    */
+     */
     modifier onlyBlacklister() {
         require(msg.sender == blacklister);
         _;
@@ -140,7 +139,7 @@ contract Blacklistable is OwnableUSDCT {
     /**
      * @dev Throws if argument account is blacklisted
      * @param _account The address to check
-    */
+     */
     modifier notBlacklisted(address _account) {
         require(blacklisted[_account] == false);
         _;
@@ -149,7 +148,7 @@ contract Blacklistable is OwnableUSDCT {
     /**
      * @dev Checks if account is blacklisted
      * @param _account The address to check
-    */
+     */
     function isBlacklisted(address _account) public view returns (bool) {
         return blacklisted[_account];
     }
@@ -157,7 +156,7 @@ contract Blacklistable is OwnableUSDCT {
     /**
      * @dev Adds account to blacklist
      * @param _account The address to blacklist
-    */
+     */
     function blacklist(address _account) public onlyBlacklister {
         blacklisted[_account] = true;
         emit Blacklisted(_account);
@@ -166,7 +165,7 @@ contract Blacklistable is OwnableUSDCT {
     /**
      * @dev Removes account from blacklist
      * @param _account The address to remove from the blacklist
-    */
+     */
     function unBlacklist(address _account) public onlyBlacklister {
         blacklisted[_account] = false;
         emit UnBlacklisted(_account);
@@ -179,29 +178,29 @@ contract Blacklistable is OwnableUSDCT {
     }
 }
 
+
 // File: contracts/Pausable.sol
 
 /**
-* Copyright CENTRE SECZ 2018
-*
-* Permission is hereby granted, free of charge, to any person obtaining a copy
-* of this software and associated documentation files (the "Software"), to deal
-* in the Software without restriction, including without limitation the rights
-* to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-* copies of the Software, and to permit persons to whom the Software is furnished to
-* do so, subject to the following conditions:
-*
-* The above copyright notice and this permission notice shall be included in all
-* copies or substantial portions of the Software.
-*
-* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
-* WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
-* CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-*/
-
+ * Copyright CENTRE SECZ 2018
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is furnished to
+ * do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+ * WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
 
 /**
  * @title Pausable
@@ -215,56 +214,55 @@ contract Blacklistable is OwnableUSDCT {
  * 5) Remove constructor (7/13/18)
  */
 contract Pausable is OwnableUSDCT {
-  event Pause();
-  event Unpause();
-  event PauserChanged(address indexed newAddress);
+    event Pause();
+    event Unpause();
+    event PauserChanged(address indexed newAddress);
 
+    address public pauser;
+    bool public paused = false;
 
-  address public pauser;
-  bool public paused = false;
+    /**
+     * @dev Modifier to make a function callable only when the contract is not paused.
+     */
+    modifier whenNotPaused() {
+        require(!paused);
+        _;
+    }
 
-  /**
-   * @dev Modifier to make a function callable only when the contract is not paused.
-   */
-  modifier whenNotPaused() {
-    require(!paused);
-    _;
-  }
+    /**
+     * @dev throws if called by any account other than the pauser
+     */
+    modifier onlyPauser() {
+        require(msg.sender == pauser);
+        _;
+    }
 
-  /**
-   * @dev throws if called by any account other than the pauser
-   */
-  modifier onlyPauser() {
-    require(msg.sender == pauser);
-    _;
-  }
+    /**
+     * @dev called by the owner to pause, triggers stopped state
+     */
+    function pause() public onlyPauser {
+        paused = true;
+        emit Pause();
+    }
 
-  /**
-   * @dev called by the owner to pause, triggers stopped state
-   */
-  function pause() onlyPauser public {
-    paused = true;
-    emit Pause();
-  }
+    /**
+     * @dev called by the owner to unpause, returns to normal state
+     */
+    function unpause() public onlyPauser {
+        paused = false;
+        emit Unpause();
+    }
 
-  /**
-   * @dev called by the owner to unpause, returns to normal state
-   */
-  function unpause() onlyPauser public {
-    paused = false;
-    emit Unpause();
-  }
-
-  /**
-   * @dev update the pauser role
-   */
-  function updatePauser(address _newPauser) onlyOwner public {
-    require(_newPauser != address(0));
-    pauser = _newPauser;
-    emit PauserChanged(pauser);
-  }
-
+    /**
+     * @dev update the pauser role
+     */
+    function updatePauser(address _newPauser) public onlyOwner {
+        require(_newPauser != address(0));
+        pauser = _newPauser;
+        emit PauserChanged(pauser);
+    }
 }
+
 
 // File: openzeppelin-solidity/contracts/math/SafeMath.sol
 
@@ -273,50 +271,50 @@ contract Pausable is OwnableUSDCT {
  * @dev Math operations with safety checks that throw on error
  */
 library SafeMath {
+    /**
+     * @dev Multiplies two numbers, throws on overflow.
+     */
+    function mul(uint256 a, uint256 b) internal pure returns (uint256 c) {
+        // Gas optimization: this is cheaper than asserting 'a' not being zero, but the
+        // benefit is lost if 'b' is also tested.
+        // See: https://github.com/OpenZeppelin/openzeppelin-solidity/pull/522
+        if (a == 0) {
+            return 0;
+        }
 
-  /**
-  * @dev Multiplies two numbers, throws on overflow.
-  */
-  function mul(uint256 a, uint256 b) internal pure returns (uint256 c) {
-    // Gas optimization: this is cheaper than asserting 'a' not being zero, but the
-    // benefit is lost if 'b' is also tested.
-    // See: https://github.com/OpenZeppelin/openzeppelin-solidity/pull/522
-    if (a == 0) {
-      return 0;
+        c = a * b;
+        assert(c / a == b);
+        return c;
     }
 
-    c = a * b;
-    assert(c / a == b);
-    return c;
-  }
+    /**
+     * @dev Integer division of two numbers, truncating the quotient.
+     */
+    function div(uint256 a, uint256 b) internal pure returns (uint256) {
+        // assert(b > 0); // Solidity automatically throws when dividing by 0
+        // uint256 c = a / b;
+        // assert(a == b * c + a % b); // There is no case in which this doesn't hold
+        return a / b;
+    }
 
-  /**
-  * @dev Integer division of two numbers, truncating the quotient.
-  */
-  function div(uint256 a, uint256 b) internal pure returns (uint256) {
-    // assert(b > 0); // Solidity automatically throws when dividing by 0
-    // uint256 c = a / b;
-    // assert(a == b * c + a % b); // There is no case in which this doesn't hold
-    return a / b;
-  }
+    /**
+     * @dev Subtracts two numbers, throws on overflow (i.e. if subtrahend is greater than minuend).
+     */
+    function sub(uint256 a, uint256 b) internal pure returns (uint256) {
+        assert(b <= a);
+        return a - b;
+    }
 
-  /**
-  * @dev Subtracts two numbers, throws on overflow (i.e. if subtrahend is greater than minuend).
-  */
-  function sub(uint256 a, uint256 b) internal pure returns (uint256) {
-    assert(b <= a);
-    return a - b;
-  }
-
-  /**
-  * @dev Adds two numbers, throws on overflow.
-  */
-  function add(uint256 a, uint256 b) internal pure returns (uint256 c) {
-    c = a + b;
-    assert(c >= a);
-    return c;
-  }
+    /**
+     * @dev Adds two numbers, throws on overflow.
+     */
+    function add(uint256 a, uint256 b) internal pure returns (uint256 c) {
+        c = a + b;
+        assert(c >= a);
+        return c;
+    }
 }
+
 
 // File: openzeppelin-solidity/contracts/token/ERC20/ERC20Basic.sol
 
@@ -326,11 +324,15 @@ library SafeMath {
  * See https://github.com/ethereum/EIPs/issues/179
  */
 contract ERC20Basic {
-  function totalSupply() public view returns (uint256);
-  function balanceOf(address who) public view returns (uint256);
-  function transfer(address to, uint256 value) public returns (bool);
-  event Transfer(address indexed from, address indexed to, uint256 value);
+    function totalSupply() public view returns (uint256);
+
+    function balanceOf(address who) public view returns (uint256);
+
+    function transfer(address to, uint256 value) public returns (bool);
+
+    event Transfer(address indexed from, address indexed to, uint256 value);
 }
+
 
 // File: openzeppelin-solidity/contracts/token/ERC20/ERC20.sol
 
@@ -339,47 +341,47 @@ contract ERC20Basic {
  * @dev see https://github.com/ethereum/EIPs/issues/20
  */
 contract ERC20T is ERC20Basic {
-  function allowance(address owner, address spender)
-    public view returns (uint256);
+    function allowance(address owner, address spender)
+        public
+        view
+        returns (uint256);
 
-  function transferFrom(address from, address to, uint256 value)
-    public returns (bool);
+    function transferFrom(address from, address to, uint256 value)
+        public
+        returns (bool);
 
-  function approve(address spender, uint256 value) public returns (bool);
-  event Approval(
-    address indexed owner,
-    address indexed spender,
-    uint256 value
-  );
+    function approve(address spender, uint256 value) public returns (bool);
+
+    event Approval(
+        address indexed owner,
+        address indexed spender,
+        uint256 value
+    );
 }
+
 
 // File: contracts/FiatTokenV1.sol
 
 /**
-* Copyright CENTRE SECZ 2018
-*
-* Permission is hereby granted, free of charge, to any person obtaining a copy
-* of this software and associated documentation files (the "Software"), to deal
-* in the Software without restriction, including without limitation the rights
-* to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-* copies of the Software, and to permit persons to whom the Software is furnished to
-* do so, subject to the following conditions:
-*
-* The above copyright notice and this permission notice shall be included in all
-* copies or substantial portions of the Software.
-*
-* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
-* WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
-* CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-*/
-
-
-
-
-
+ * Copyright CENTRE SECZ 2018
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is furnished to
+ * do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+ * WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
 
 /**
  * @title FiatToken
@@ -394,10 +396,10 @@ contract USDC is OwnableUSDCT, ERC20T, Pausable, Blacklistable {
     string public currency;
     address public masterMinter;
     bool internal initialized;
+    uint256 internal totalSupply_;
 
     mapping(address => uint256) internal balances;
     mapping(address => mapping(address => uint256)) internal allowed;
-    uint256 internal totalSupply_ = 0;
     mapping(address => bool) internal minters;
     mapping(address => uint256) internal minterAllowed;
 
@@ -423,6 +425,7 @@ contract USDC is OwnableUSDCT, ERC20T, Pausable, Blacklistable {
         require(_blacklister != address(0));
         require(_owner != address(0));
 
+        totalSupply_ = 0;
         name = _name;
         symbol = _symbol;
         currency = _currency;
@@ -436,7 +439,7 @@ contract USDC is OwnableUSDCT, ERC20T, Pausable, Blacklistable {
 
     /**
      * @dev Throws if called by any account other than a minter
-    */
+     */
     modifier onlyMinters() {
         require(minters[msg.sender] == true);
         _;
@@ -447,8 +450,15 @@ contract USDC is OwnableUSDCT, ERC20T, Pausable, Blacklistable {
      * @param _to The address that will receive the minted tokens.
      * @param _amount The amount of tokens to mint. Must be less than or equal to the minterAllowance of the caller.
      * @return A boolean that indicates if the operation was successful.
-    */
-    function mint(address _to, uint256 _amount) whenNotPaused onlyMinters notBlacklisted(msg.sender) notBlacklisted(_to) public returns (bool) {
+     */
+    function mint(address _to, uint256 _amount)
+        public
+        whenNotPaused
+        onlyMinters
+        notBlacklisted(msg.sender)
+        notBlacklisted(_to)
+        returns (bool)
+    {
         require(_to != address(0));
         require(_amount > 0);
 
@@ -465,7 +475,7 @@ contract USDC is OwnableUSDCT, ERC20T, Pausable, Blacklistable {
 
     /**
      * @dev Throws if called by any account other than the masterMinter
-    */
+     */
     modifier onlyMasterMinter() {
         require(msg.sender == masterMinter);
         _;
@@ -474,7 +484,7 @@ contract USDC is OwnableUSDCT, ERC20T, Pausable, Blacklistable {
     /**
      * @dev Get minter allowance for an account
      * @param minter The address of the minter
-    */
+     */
     function minterAllowance(address minter) public view returns (uint256) {
         return minterAllowed[minter];
     }
@@ -482,7 +492,7 @@ contract USDC is OwnableUSDCT, ERC20T, Pausable, Blacklistable {
     /**
      * @dev Checks if account is a minter
      * @param account The address to check
-    */
+     */
     function isMinter(address account) public view returns (bool) {
         return minters[account];
     }
@@ -491,14 +501,18 @@ contract USDC is OwnableUSDCT, ERC20T, Pausable, Blacklistable {
      * @dev Get allowed amount for an account
      * @param owner address The account owner
      * @param spender address The account spender
-    */
-    function allowance(address owner, address spender) public view returns (uint256) {
+     */
+    function allowance(address owner, address spender)
+        public
+        view
+        returns (uint256)
+    {
         return allowed[owner][spender];
     }
 
     /**
      * @dev Get totalSupply of token
-    */
+     */
     function totalSupply() public view returns (uint256) {
         return totalSupply_;
     }
@@ -506,7 +520,7 @@ contract USDC is OwnableUSDCT, ERC20T, Pausable, Blacklistable {
     /**
      * @dev Get token balance of an account
      * @param account address The account
-    */
+     */
     function balanceOf(address account) public view returns (uint256) {
         return balances[account];
     }
@@ -514,8 +528,14 @@ contract USDC is OwnableUSDCT, ERC20T, Pausable, Blacklistable {
     /**
      * @dev Adds blacklisted check to approve
      * @return True if the operation was successful.
-    */
-    function approve(address _spender, uint256 _value) whenNotPaused notBlacklisted(msg.sender) notBlacklisted(_spender) public returns (bool) {
+     */
+    function approve(address _spender, uint256 _value)
+        public
+        whenNotPaused
+        notBlacklisted(msg.sender)
+        notBlacklisted(_spender)
+        returns (bool)
+    {
         allowed[msg.sender][_spender] = _value;
         emit Approval(msg.sender, _spender, _value);
         return true;
@@ -527,8 +547,15 @@ contract USDC is OwnableUSDCT, ERC20T, Pausable, Blacklistable {
      * @param _to address The address which you want to transfer to
      * @param _value uint256 the amount of tokens to be transferred
      * @return bool success
-    */
-    function transferFrom(address _from, address _to, uint256 _value) whenNotPaused notBlacklisted(_to) notBlacklisted(msg.sender) notBlacklisted(_from) public returns (bool) {
+     */
+    function transferFrom(address _from, address _to, uint256 _value)
+        public
+        whenNotPaused
+        notBlacklisted(_to)
+        notBlacklisted(msg.sender)
+        notBlacklisted(_from)
+        returns (bool)
+    {
         require(_to != address(0));
         require(_value <= balances[_from]);
         require(_value <= allowed[_from][msg.sender]);
@@ -545,8 +572,14 @@ contract USDC is OwnableUSDCT, ERC20T, Pausable, Blacklistable {
      * @param _to The address to transfer to.
      * @param _value The amount to be transferred.
      * @return bool success
-    */
-    function transfer(address _to, uint256 _value) whenNotPaused notBlacklisted(msg.sender) notBlacklisted(_to) public returns (bool) {
+     */
+    function transfer(address _to, uint256 _value)
+        public
+        whenNotPaused
+        notBlacklisted(msg.sender)
+        notBlacklisted(_to)
+        returns (bool)
+    {
         require(_to != address(0));
         require(_value <= balances[msg.sender]);
 
@@ -561,8 +594,13 @@ contract USDC is OwnableUSDCT, ERC20T, Pausable, Blacklistable {
      * @param minter The address of the minter
      * @param minterAllowedAmount The minting amount allowed for the minter
      * @return True if the operation was successful.
-    */
-    function configureMinter(address minter, uint256 minterAllowedAmount) whenNotPaused onlyMasterMinter public returns (bool) {
+     */
+    function configureMinter(address minter, uint256 minterAllowedAmount)
+        public
+        whenNotPaused
+        onlyMasterMinter
+        returns (bool)
+    {
         minters[minter] = true;
         minterAllowed[minter] = minterAllowedAmount;
         emit MinterConfigured(minter, minterAllowedAmount);
@@ -573,8 +611,12 @@ contract USDC is OwnableUSDCT, ERC20T, Pausable, Blacklistable {
      * @dev Function to remove a minter
      * @param minter The address of the minter to remove
      * @return True if the operation was successful.
-    */
-    function removeMinter(address minter) onlyMasterMinter public returns (bool) {
+     */
+    function removeMinter(address minter)
+        public
+        onlyMasterMinter
+        returns (bool)
+    {
         minters[minter] = false;
         minterAllowed[minter] = 0;
         emit MinterRemoved(minter);
@@ -586,8 +628,13 @@ contract USDC is OwnableUSDCT, ERC20T, Pausable, Blacklistable {
      * Validates that caller is a minter and that sender is not blacklisted
      * amount is less than or equal to the minter's account balance
      * @param _amount uint256 the amount of tokens to be burned
-    */
-    function burn(uint256 _amount) whenNotPaused onlyMinters notBlacklisted(msg.sender) public {
+     */
+    function burn(uint256 _amount)
+        public
+        whenNotPaused
+        onlyMinters
+        notBlacklisted(msg.sender)
+    {
         uint256 balance = balances[msg.sender];
         require(_amount > 0);
         require(balance >= _amount);
@@ -598,7 +645,7 @@ contract USDC is OwnableUSDCT, ERC20T, Pausable, Blacklistable {
         emit Transfer(msg.sender, address(0), _amount);
     }
 
-    function updateMasterMinter(address _newMasterMinter) onlyOwner public {
+    function updateMasterMinter(address _newMasterMinter) public onlyOwner {
         require(_newMasterMinter != address(0));
         masterMinter = _newMasterMinter;
         emit MasterMinterChanged(masterMinter);

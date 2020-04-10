@@ -723,8 +723,10 @@ contract Ownable is Initializable, Context {
 
 pragma solidity ^0.5.0;
 
+
 interface InterfaceInverseToken {
     function mintTokens(address, uint256) external returns (bool);
+
     function burnTokens(address, uint256) external returns (bool);
 
     /**
@@ -1302,542 +1304,6 @@ library DateTimeLibrary {
     }
 }
 
-// File: contracts/PersistentStorage.sol
-
-pragma solidity ^0.5.0;
-
-
-
-contract PersistentStorage is Ownable {
-
-  address public tokenSwapManager;
-  address public bridge;
-
-  bool public isPaused;
-  uint256 public isShutdown;
-
-  struct Accounting {
-    uint256 price;
-    uint256 cashPositionPerToken;
-    uint256 balancePerToken;
-    uint256 lendingFee;
-  }
-
-  struct CreateOrderTimestamp {
-    uint256 numOfTokens;
-    uint256 timestamp;
-  }
-
-  struct Order {
-    string orderType;
-    uint256 tokensGiven;
-    uint256 tokensRecieved;
-    uint256 avgBlendedFee;
-  }
-
-  uint256 public lastActivityDay;
-  uint256 public minRebalanceAmount;
-  uint256 public managementFee;
-
-  mapping (uint256 => Accounting[]) private accounting;
-
-  mapping (address => bool) public whitelistedAddresses;
-
-  uint256[] public mintingFeeBracket;
-  mapping (uint256 => uint256) public mintingFee;
-
-  Order[] public allOrders;
-  mapping (address => Order[]) public orderByUser;
-  mapping (address => CreateOrderTimestamp[]) public lockedOrders;
-
-
-  event AccountingValuesSet(uint256 today);
-  event RebalanceValuesSet(uint256 newMinRebalanceAmount);
-  event ManagementFeeValuesSet(uint256 newManagementFee);
-
-
- function initialize(address ownerAddress, uint256 _managementFee, uint256 _minRebalanceAmount) public initializer {
-    Ownable.initialize(ownerAddress);
-    managementFee = _managementFee;
-    minRebalanceAmount = _minRebalanceAmount;
-    mintingFeeBracket.push(50000 ether);
-    mintingFeeBracket.push(100000 ether);
-    mintingFee[50000 ether] = 3 ether / 1000; //0.3%
-    mintingFee[100000 ether] = 2 ether / 1000; //0.2%
-    mintingFee[2^256-1] = 1 ether / 1000; //0.1% all values higher
-  }
-
-  function setTokenSwapManager(address _tokenSwapManager) public onlyOwner {
-    require(_tokenSwapManager != address(0), 'adddress must not be empty');
-    tokenSwapManager = _tokenSwapManager;
-  }
-
-  function setBridge(address _bridge) public onlyOwner {
-    require(_bridge != address(0), 'adddress must not be empty');
-    bridge = _bridge;
-  }
-
-  function setIsPaused(bool _isPaused) public onlyOwner {
-    isPaused = _isPaused;
-  }
-
-  function setIsShutdown() public onlyOwner {
-    isShutdown = 1;
-  }
-
-
-
-  /**
-  * @dev Throws if called by any account other than the owner.
-  */
-  modifier onlyOwnerOrTokenSwap() {
-      require(isOwner() || _msgSender() == tokenSwapManager, "caller is not the owner or token swap manager");
-      _;
-  }
-
-
-
-  /*
-  * Saves order in mapping (address => Order[]) orderByUser
-  * orderIndex == 100000000, append to Order[]
-  * orderIndex != 100000000, overwrite element at orderIndex
-  */
-
-  function setOrderByUser(
-    address whitelistedAddress,
-    string memory orderType,
-    uint256 tokensGiven,
-    uint256 tokensRecieved,
-    uint256 avgBlendedFee,
-    uint256 orderIndex
-  )
-    public
-    onlyOwnerOrTokenSwap
-  {
-    Order memory newOrder = Order(
-      orderType,
-      tokensGiven,
-      tokensRecieved,
-      avgBlendedFee
-    );
-
-    if (orderIndex == 100000000) {
-      orderByUser[whitelistedAddress].push(newOrder);
-    } else {
-      orderByUser[whitelistedAddress][orderIndex] = newOrder;
-    }
-  }
-
-  /*
-  * Gets Order[] For User Address
-  * Return order at Index in Order[]
-  */
-
-  function getOrderByUser(
-    address whitelistedAddress,
-    uint256 orderIndex
-  )
-    public view
-    returns (string memory orderType, uint256 tokensGiven, uint256 tokensRecieved, uint256 avgBlendedFee)
-  {
-    Order storage orderAtIndex = orderByUser[whitelistedAddress][orderIndex];
-    return (
-      orderAtIndex.orderType,
-      orderAtIndex.tokensGiven,
-      orderAtIndex.tokensRecieved,
-      orderAtIndex.avgBlendedFee
-
-    );
-
-  }
-
-  /*
-  * Save order to allOrders array
-  * orderIndex == 100000000, append to allOrders array
-  * orderIndex != 100000000, overwrite element at orderIndex
-  */
-
-  function setOrder(
-    string memory orderType,
-    uint256 tokensGiven,
-    uint256 tokensRecieved,
-    uint256 avgBlendedFee,
-    uint256 orderIndex
-  )
-    public
-    onlyOwnerOrTokenSwap
-  {
-    Order memory newOrder = Order(
-      orderType,
-      tokensGiven,
-      tokensRecieved,
-      avgBlendedFee
-    );
-
-    if (orderIndex == 100000000) {
-      allOrders.push(newOrder);
-    } else {
-      allOrders[orderIndex] = newOrder;
-    }
-
-  }
-
-  /*
-  * Saves order to allOrders array
-  * orderIndex == 100000000, append to allOrders array
-  * orderIndex != 100000000, overwrite element at orderIndex
-  */
-
-  function getOrder(uint256 index)
-    public view
-    returns (string memory orderType, uint256 tokensGiven, uint256 tokensRecieved, uint256 avgBlendedFee)
-  {
-    Order storage orderAtIndex = allOrders[index];
-    return (
-      orderAtIndex.orderType,
-      orderAtIndex.tokensGiven,
-      orderAtIndex.tokensRecieved,
-      orderAtIndex.avgBlendedFee
-    );
-  }
-
-  /*
-  * Saves order to mapping (address => CreateOrderTimestamp[]) lockedOrders
-  * Appends order to CreateOrderTimestamp[]
-  */
-
-  function setLockedOrderForUser(
-    address authorizedUser,
-    uint256 lockedAmount,
-    uint256 blockTimestamp
-  )
-    public
-    onlyOwnerOrTokenSwap
-  {
-    require(authorizedUser != address(0), 'adddress must not be empty');
-    require(lockedAmount != 0, 'creation order must be greater than 0');
-
-    CreateOrderTimestamp memory newCreateOrder = CreateOrderTimestamp(lockedAmount, blockTimestamp);
-    CreateOrderTimestamp[] storage allCreateOrders = lockedOrders[authorizedUser];
-    allCreateOrders.push(newCreateOrder);
-
-  }
-
-  /*
-  * Get order from mapping (address => CreateOrderTimestamp[]) lockedOrders
-  * Returns element at index in CreateOrderTimestamp[]
-  */
-
-  function getLockedOrderForUser(
-    address authorizedUser,
-    uint256 index
-  )
-    public
-    view
-    returns (uint256 timelockedAmount, uint256 blockTimestamp)
-  {
-    require(authorizedUser != address(0), 'adddress must not be empty');
-    CreateOrderTimestamp[] memory allCreateOrders = lockedOrders[authorizedUser];
-
-    return (
-      allCreateOrders[index].numOfTokens,
-      allCreateOrders[index].timestamp
-    );
-  }
-
-
-  /*
-  * Get CreateOrderTimestamp[] array size
-  */
-  function getLockedOrdersArraySize(address authorizedUser)
-    public
-    view
-    returns (uint256 count)
-  {
-    require(authorizedUser != address(0), 'adddress must not be empty');
-    CreateOrderTimestamp[] memory allCreateOrders = lockedOrders[authorizedUser];
-    return allCreateOrders.length;
-  }
-
-
-  // @dev Set whitelisted addresses
-  function setWhitelistedAddress(address adddressToAdd) public onlyOwner {
-    require(adddressToAdd != address(0), 'adddress must not be empty');
-
-    whitelistedAddresses[adddressToAdd] = true;
-  }
-
-  // @dev Remove whitelisted addresses
-  function removeWhitelistedAddress(address addressToRemove) public onlyOwner {
-    require(whitelistedAddresses[addressToRemove], 'address must be added to be removed allowed');
-
-    delete whitelistedAddresses[addressToRemove];
-  }
-
-  // @dev Updates whitelisted addresses
-  function updateWhitelistedAddress(address oldAddress, address newAddress) public {
-    removeWhitelistedAddress(oldAddress);
-    setWhitelistedAddress(newAddress);
-  }
-
-  // @dev Get accounting values for a specific day
-  // @param date format as 20200123 for 23th of January 2020
-  function getAccounting(uint256 date) public view returns (uint256, uint256, uint256, uint256) {
-      return(
-        accounting[date][accounting[date].length-1].price,
-        accounting[date][accounting[date].length-1].cashPositionPerToken,
-        accounting[date][accounting[date].length-1].balancePerToken,
-        accounting[date][accounting[date].length-1].lendingFee
-      );
-  }
-
-  // @dev Set accounting values for the day
-  function setAccounting
-    (
-      uint256 _price,
-      uint256 _cashPositionPerToken,
-      uint256 _balancePerToken,
-      uint256 _lendingFee
-    )
-      external
-      onlyOwnerOrTokenSwap
-  {
-    (uint256 year, uint256 month, uint256 day) = DateTimeLibrary.timestampToDate(now);
-    uint256 today = year * 10000 + month * 100 + day;
-      accounting[today].push(Accounting(_price, _cashPositionPerToken, _balancePerToken, _lendingFee));
-      lastActivityDay = today;
-      emit AccountingValuesSet(today);
-  }
-
-  // @dev Set accounting values for the day
-  function setAccountingForLastActivityDay
-    (
-      uint256 _price,
-      uint256 _cashPositionPerToken,
-      uint256 _balancePerToken,
-      uint256 _lendingFee
-    )
-      external
-      onlyOwnerOrTokenSwap
-  {
-      accounting[lastActivityDay].push(Accounting(_price, _cashPositionPerToken, _balancePerToken, _lendingFee));
-      emit AccountingValuesSet(lastActivityDay);
-  }
-
-  // @dev Set last rebalance information
-  function setMinRebalanceAmount(uint256 _minRebalanceAmount) external onlyOwner {
-    minRebalanceAmount = _minRebalanceAmount;
-
-    emit RebalanceValuesSet(minRebalanceAmount);
-  }
-
-  // @dev Set last rebalance information
-  function setManagementFee(uint256 _managementFee) external onlyOwner {
-    managementFee = _managementFee;
-    emit ManagementFeeValuesSet(managementFee);
-  }
-
-  // @dev Returns price
-  function getPrice() public view returns (uint256 price) {
-    return accounting[lastActivityDay][accounting[lastActivityDay].length-1].price;
-  }
-
-  // @dev Returns cash position amount
-  function getCashPositionPerToken() public view returns (uint256 amount) {
-      return accounting[lastActivityDay][accounting[lastActivityDay].length-1].cashPositionPerToken;
-  }
-
-  // @dev Returns borrowed crypto amount
-  function getBalancePerToken() public view returns (uint256 amount) {
-    return accounting[lastActivityDay][accounting[lastActivityDay].length-1].balancePerToken;
-  }
-
-  // @dev Returns lending fee
-  function getLendingFee() public view returns (uint256 lendingRate) {
-    return accounting[lastActivityDay][accounting[lastActivityDay].length-1].lendingFee;
-  }
- // @dev Returns lending fee
-  function getManagementFee() public view returns (uint256 lendingRate) {
-    return managementFee;
-  }
-  // @dev Returns total fee
-  function getTotalFee() public view returns (uint256 totalFee) {
-    return getLendingFee() + getManagementFee();
-  }
-  // @dev Sets last minting fee
-  function setLastMintingFee(uint256 _mintingFee) public onlyOwner {
-    mintingFee[2^256-1] = _mintingFee;
-  }
-  // @dev Adds minting fee
-  function addMintingFeeBracket(uint256 _mintingFeeLimit, uint256 _mintingFee) public onlyOwner {
-    require(_mintingFeeLimit > mintingFeeBracket[mintingFeeBracket.length-1], 'New minting fee bracket needs to be bigger then last one');
-    mintingFeeBracket.push(_mintingFeeLimit);
-    mintingFee[_mintingFeeLimit] = _mintingFee;
-  }
-  // @dev Deletes last minting fee
-  function deleteLastMintingFeeBracket() public onlyOwner {
-    delete mintingFee[mintingFeeBracket[mintingFeeBracket.length-1]];
-    delete mintingFeeBracket[mintingFeeBracket.length-1];
-  }
-  // @dev Changes minting fee
-  function changeMintingLimit(uint256 _position, uint256 _mintingFeeLimit, uint256 _mintingFee) public onlyOwner {
-    require(_mintingFeeLimit > mintingFeeBracket[mintingFeeBracket.length-1], 'New minting fee bracket needs to be bigger then last one');
-    if(_position != 0){
-      require(_mintingFeeLimit > mintingFeeBracket[_position-1], 'New minting fee bracket needs to be bigger then last one');
-    }
-    if(_position < mintingFeeBracket.length-1){
-      require(_mintingFeeLimit < mintingFeeBracket[_position+1], 'New minting fee bracket needs to be smaller then next one');
-    }
-    mintingFeeBracket[_position] = _mintingFeeLimit;
-    mintingFee[_mintingFeeLimit] = _mintingFee;
-  }
-  // @dev Returns minting fee for cash
-  function getMintingFee(uint256 cash) public view returns(uint256){
-    for ( uint i = 0; i < mintingFeeBracket.length; i++ ) {
-      if (cash <= mintingFeeBracket[i]) {
-        return mintingFee[mintingFeeBracket[i]];
-      }
-    }
-    return mintingFee[2^256-1];
-  }
-}
-
-// File: contracts/Abstract/InterfaceStorage.sol
-
-pragma solidity ^0.5.0;
-
-interface InterfaceStorage {
-    function whitelistedAddresses(address) external view returns(bool);
-}
-
-// File: contracts/KYCVerifier.sol
-
-pragma solidity ^0.5.0;
-
-
-
-contract KYCVerifier is Initializable {
-  InterfaceStorage public persistentStorage;
-
-  function initialize(address _persistentStorage) public initializer {
-    persistentStorage = InterfaceStorage(_persistentStorage);
-  }
-
-  function isAddressWhitelisted(address userAddress) public view returns(bool) {
-    return persistentStorage.whitelistedAddresses(userAddress);
-  }
-}
-
-// File: contracts/CollateralPool.sol
-
-pragma solidity ^0.5.0;
-
-
-
-
-
-
-contract CollateralPool is Ownable {
-  using SafeMath for uint256;
-  KYCVerifier public kycVerifier;
-  PersistentStorage public persistentStorage;
-
-  uint256[2] public percentageOfFundsForColdStorage;
-  address public coldStorage;
-
-  event SetPercentageOfFundsForColdStorageEvent(uint256[2] newPercentageOfFundsForColdStorage);
-
-  function initialize(
-    address ownerAddress,
-    address _kycVerifier,
-    address _persistentStorage,
-    address _coldStorage,
-    uint256[2] memory _percentageOfFundsForColdStorage
-  )
-    public
-    initializer
-  {
-    require(
-      ownerAddress != address(0) &&
-      _kycVerifier != address(0) &&
-      _coldStorage != address(0) &&
-      _percentageOfFundsForColdStorage[0] != 0 &&
-      _percentageOfFundsForColdStorage[1] != 0,
-      "params variables cannot be empty"
-    );
-    initialize(ownerAddress);
-    kycVerifier = KYCVerifier(_kycVerifier);
-    persistentStorage = PersistentStorage(_persistentStorage);
-    coldStorage = _coldStorage;
-    percentageOfFundsForColdStorage = _percentageOfFundsForColdStorage;
-  }
-
-  // @dev Move tokens to collateral pool
-  // @param _token ERC20 address
-  // @param whiteListedAddress address allowed to transfer to pool
-  // @param orderAmount amount to transfer to collateral pool
-  function moveTokenToPool(address _token, address whiteListedAddress, uint256 orderAmount)
-    public
-    onlyOwnerOrTokenSwap
-    returns (bool)
-  {
-    InterfaceInverseToken token_ = InterfaceInverseToken(_token);
-    require(kycVerifier.isAddressWhitelisted(whiteListedAddress), 'only whitelisted address are allowed to move tokens to pool');
-    require(orderAmount <= token_.allowance(whiteListedAddress, address(this)), 'cannot move more funds than allowed');
-
-    uint256 percentageNumerator = percentageOfFundsForColdStorage[0];
-    uint256 percentageDenominator = percentageOfFundsForColdStorage[1];
-    uint256 amountForColdStorage = orderAmount.mul(percentageNumerator).div(percentageDenominator);
-
-    token_.transferFrom(whiteListedAddress, address(this), orderAmount);
-    token_.transfer(coldStorage, amountForColdStorage);
-
-    return true;
-  }
-
-  // @dev Move tokens out of collateral pool
-  // @param _token ERC20 address
-  // @param destinationAddress address to send to
-  // @param orderAmount amount to transfer from collateral pool
-  function moveTokenfromPool(address _token, address destinationAddress, uint256 orderAmount)
-    public
-    onlyOwnerOrTokenSwap()
-    returns (bool)
-  {
-    InterfaceInverseToken token_ = InterfaceInverseToken(_token);
-    require(orderAmount <= token_.balanceOf(address(this)), 'cannot move more funds than owned');
-
-    token_.transfer(destinationAddress, orderAmount);
-    return true;
-  }
-
-  modifier onlyOwnerOrTokenSwap() {
-      require(isOwner() || _msgSender() == persistentStorage.tokenSwapManager(), "caller is not the owner or token swap manager");
-      _;
-  }
-  
-  // @dev Sets new coldStorage
-  // @param _newColdStorage Address for new cold storage wallet
-  function setColdStorage(address _newColdStorage) public onlyOwner {
-    require(_newColdStorage != address(0), 'address cannot be empty');
-    coldStorage = _newColdStorage;
-  }
-
-  // @dev Sets percentage of funds to stay in contract. Owner only
-  // @param _newPercentageOfFundsForColdStorage List with two elements referencing percentage of funds for cold storage as a fraction
-  // e.g. 1/2 is [1,2]
-  function setPercentageOfFundsForColdStorage(uint256[2] memory _newPercentageOfFundsForColdStorage)
-    public
-    onlyOwner
-  {
-      require(_newPercentageOfFundsForColdStorage[0] != 0 && _newPercentageOfFundsForColdStorage[1] != 0, 'none of the values can be zero');
-      percentageOfFundsForColdStorage[0] = _newPercentageOfFundsForColdStorage[0];
-      percentageOfFundsForColdStorage[1] = _newPercentageOfFundsForColdStorage[1];
-
-      emit SetPercentageOfFundsForColdStorageEvent(_newPercentageOfFundsForColdStorage);
-  }
-}
-
 // File: contracts/utils/Math.sol
 
 /// Math.sol -- mixin for inline numerical wizardry
@@ -1861,16 +1327,16 @@ pragma solidity ^0.5.0;
 library DSMath {
 
     // --- Unsigned Math ----
-
     function add(uint x, uint y) internal pure returns (uint z) {
-        require((z = x + y) >= x);
+        require((z = x + y) >= x, "ds-math-add-overflow");
     }
     function sub(uint x, uint y) internal pure returns (uint z) {
-        require((z = x - y) <= x);
+        require((z = x - y) <= x, "ds-math-sub-underflow");
     }
     function mul(uint x, uint y) internal pure returns (uint z) {
-        require(y == 0 || (z = x * y) / y == x);
+        require(y == 0 || (z = x * y) / y == x, "ds-math-mul-overflow");
     }
+
 
     function min(uint x, uint y) internal pure returns (uint z) {
         return x <= y ? x : y;
@@ -1935,9 +1401,599 @@ library DSMath {
     }
 }
 
+// File: contracts/PersistentStorage.sol
+
+pragma solidity ^0.5.0;
+
+
+
+
+
+contract PersistentStorage is Ownable {
+    address public tokenSwapManager;
+    address public bridge;
+
+    bool public isPaused;
+    bool public isShutdown;
+
+    struct Accounting {
+        uint256 price;
+        uint256 cashPositionPerTokenUnit;
+        uint256 balancePerTokenUnit;
+        uint256 lendingFee;
+    }
+
+    struct Order {
+        string orderType;
+        uint256 tokensGiven;
+        uint256 tokensRecieved;
+        uint256 avgBlendedFee;
+    }
+
+    uint256 public lastActivityDay;
+    uint256 public minRebalanceAmount;
+    uint256 private managementFee;
+
+    mapping(uint256 => Accounting[]) private accounting;
+
+    mapping(address => bool) public whitelistedAddresses;
+
+    uint256[] public mintingFeeBracket;
+    mapping(uint256 => uint256) public mintingFee;
+
+    Order[] public allOrders;
+    mapping(address => Order[]) public orderByUser;
+    mapping(address => uint256) public delayedRedemptionsByUser;
+
+    event AccountingValuesSet(uint256 today);
+    event RebalanceValuesSet(uint256 newMinRebalanceAmount);
+    event ManagementFeeValuesSet(uint256 newManagementFee);
+
+    function initialize(
+        address ownerAddress,
+        uint256 _managementFee,
+        uint256 _minRebalanceAmount
+    ) public initializer {
+        initialize(ownerAddress);
+        managementFee = _managementFee;
+        minRebalanceAmount = _minRebalanceAmount;
+        mintingFeeBracket.push(50000 ether);
+        mintingFeeBracket.push(100000 ether);
+        mintingFee[50000 ether] = 3 ether / 1000; //0.3%
+        mintingFee[100000 ether] = 2 ether / 1000; //0.2%
+        mintingFee[~uint256(0)] = 1 ether / 1000; //0.1% all values higher
+    }
+
+    function setTokenSwapManager(address _tokenSwapManager) public onlyOwner {
+        require(_tokenSwapManager != address(0), "adddress must not be empty");
+        tokenSwapManager = _tokenSwapManager;
+    }
+
+    function setBridge(address _bridge) public onlyOwner {
+        require(_bridge != address(0), "adddress must not be empty");
+        bridge = _bridge;
+    }
+
+    function setIsPaused(bool _isPaused) public onlyOwner {
+        isPaused = _isPaused;
+    }
+
+    function shutdown() public onlyOwner {
+        isShutdown = true;
+    }
+
+    /**
+     * @dev Throws if called by any account other than the owner.
+     */
+    modifier onlyOwnerOrTokenSwap() {
+        require(
+            isOwner() || _msgSender() == tokenSwapManager,
+            "caller is not the owner or token swap manager"
+        );
+        _;
+    }
+
+    function setDelayedRedemptionsByUser(
+        uint256 amountToRedeem,
+        address whitelistedAddress
+    ) public onlyOwnerOrTokenSwap {
+        delayedRedemptionsByUser[whitelistedAddress] = amountToRedeem;
+    }
+
+    function getDelayedRedemptionsByUser(address whitelistedAddress)
+        public
+        view
+        returns (uint256)
+    {
+        return delayedRedemptionsByUser[whitelistedAddress];
+    }
+
+    /*
+     * Saves order in mapping (address => Order[]) orderByUser
+     * overwrite == false, append to Order[]
+     * overwrite == true, overwrite element at orderIndex
+     */
+
+    function setOrderByUser(
+        address whitelistedAddress,
+        string memory orderType,
+        uint256 tokensGiven,
+        uint256 tokensRecieved,
+        uint256 avgBlendedFee,
+        uint256 orderIndex,
+        bool overwrite
+    ) public onlyOwnerOrTokenSwap() {
+        Order memory newOrder = Order(
+            orderType,
+            tokensGiven,
+            tokensRecieved,
+            avgBlendedFee
+        );
+
+        if (!overwrite) {
+            orderByUser[whitelistedAddress].push(newOrder);
+            setOrder(
+                orderType,
+                tokensGiven,
+                tokensRecieved,
+                avgBlendedFee,
+                orderIndex,
+                overwrite
+            );
+        } else {
+            orderByUser[whitelistedAddress][orderIndex] = newOrder;
+        }
+    }
+
+    /*
+     * Gets Order[] For User Address
+     * Return order at Index in Order[]
+     */
+
+    function getOrderByUser(address whitelistedAddress, uint256 orderIndex)
+        public
+        view
+        returns (
+            string memory orderType,
+            uint256 tokensGiven,
+            uint256 tokensRecieved,
+            uint256 avgBlendedFee
+        )
+    {
+
+            Order storage orderAtIndex
+         = orderByUser[whitelistedAddress][orderIndex];
+        return (
+            orderAtIndex.orderType,
+            orderAtIndex.tokensGiven,
+            orderAtIndex.tokensRecieved,
+            orderAtIndex.avgBlendedFee
+        );
+    }
+
+    /*
+     * Save order to allOrders array
+     * overwrite == false, append to allOrders array
+     * overwrite == true, overwrite element at orderIndex
+     */
+    function setOrder(
+        string memory orderType,
+        uint256 tokensGiven,
+        uint256 tokensRecieved,
+        uint256 avgBlendedFee,
+        uint256 orderIndex,
+        bool overwrite
+    ) public onlyOwnerOrTokenSwap() {
+        Order memory newOrder = Order(
+            orderType,
+            tokensGiven,
+            tokensRecieved,
+            avgBlendedFee
+        );
+
+        if (!overwrite) {
+            allOrders.push(newOrder);
+        } else {
+            allOrders[orderIndex] = newOrder;
+        }
+    }
+
+    /*
+     * Get Order
+     */
+    function getOrder(uint256 index)
+        public
+        view
+        returns (
+            string memory orderType,
+            uint256 tokensGiven,
+            uint256 tokensRecieved,
+            uint256 avgBlendedFee
+        )
+    {
+        Order storage orderAtIndex = allOrders[index];
+        return (
+            orderAtIndex.orderType,
+            orderAtIndex.tokensGiven,
+            orderAtIndex.tokensRecieved,
+            orderAtIndex.avgBlendedFee
+        );
+    }
+
+    // @dev Set whitelisted addresses
+    function setWhitelistedAddress(address adddressToAdd) public onlyOwner {
+        require(adddressToAdd != address(0), "adddress must not be empty");
+
+        whitelistedAddresses[adddressToAdd] = true;
+    }
+
+    // @dev Remove whitelisted addresses
+    function removeWhitelistedAddress(address addressToRemove)
+        public
+        onlyOwner
+    {
+        require(
+            whitelistedAddresses[addressToRemove],
+            "address must be added to be removed allowed"
+        );
+
+        delete whitelistedAddresses[addressToRemove];
+    }
+
+    // @dev Updates whitelisted addresses
+    function updateWhitelistedAddress(address oldAddress, address newAddress)
+        public
+    {
+        removeWhitelistedAddress(oldAddress);
+        setWhitelistedAddress(newAddress);
+    }
+
+    // @dev Get accounting values for a specific day
+    // @param date format as 20200123 for 23th of January 2020
+    function getAccounting(uint256 date)
+        public
+        view
+        returns (uint256, uint256, uint256, uint256)
+    {
+        return (
+            accounting[date][accounting[date].length - 1].price,
+            accounting[date][accounting[date].length - 1]
+                .cashPositionPerTokenUnit,
+            accounting[date][accounting[date].length - 1].balancePerTokenUnit,
+            accounting[date][accounting[date].length - 1].lendingFee
+        );
+    }
+
+    // @dev Set accounting values for the day
+    function setAccounting(
+        uint256 _price,
+        uint256 _cashPositionPerTokenUnit,
+        uint256 _balancePerTokenUnit,
+        uint256 _lendingFee
+    ) external onlyOwnerOrTokenSwap() {
+        (uint256 year, uint256 month, uint256 day) = DateTimeLibrary
+            .timestampToDate(block.timestamp);
+        uint256 today = year * 10000 + month * 100 + day;
+        accounting[today].push(
+            Accounting(
+                _price,
+                _cashPositionPerTokenUnit,
+                _balancePerTokenUnit,
+                _lendingFee
+            )
+        );
+        lastActivityDay = today;
+        emit AccountingValuesSet(today);
+    }
+
+    // @dev Set accounting values for the day
+    function setAccountingForLastActivityDay(
+        uint256 _price,
+        uint256 _cashPositionPerTokenUnit,
+        uint256 _balancePerTokenUnit,
+        uint256 _lendingFee
+    ) external onlyOwnerOrTokenSwap() {
+        accounting[lastActivityDay].push(
+            Accounting(
+                _price,
+                _cashPositionPerTokenUnit,
+                _balancePerTokenUnit,
+                _lendingFee
+            )
+        );
+        emit AccountingValuesSet(lastActivityDay);
+    }
+
+    // @dev Set last rebalance information
+    function setMinRebalanceAmount(uint256 _minRebalanceAmount)
+        external
+        onlyOwner
+    {
+        minRebalanceAmount = _minRebalanceAmount;
+
+        emit RebalanceValuesSet(minRebalanceAmount);
+    }
+
+    // @dev Set last rebalance information
+    function setManagementFee(uint256 _managementFee) external onlyOwner {
+        managementFee = _managementFee;
+        emit ManagementFeeValuesSet(managementFee);
+    }
+
+    // @dev Returns price
+    function getPrice() public view returns (uint256 price) {
+        return
+            accounting[lastActivityDay][accounting[lastActivityDay].length - 1]
+                .price;
+    }
+
+    // @dev Returns cash position amount
+    function getCashPositionPerTokenUnit()
+        public
+        view
+        returns (uint256 amount)
+    {
+        return
+            accounting[lastActivityDay][accounting[lastActivityDay].length - 1]
+                .cashPositionPerTokenUnit;
+    }
+
+    // @dev Returns borrowed crypto amount
+    function getBalancePerTokenUnit() public view returns (uint256 amount) {
+        return
+            accounting[lastActivityDay][accounting[lastActivityDay].length - 1]
+                .balancePerTokenUnit;
+    }
+
+    // @dev Returns lending fee
+    function getLendingFee() public view returns (uint256 lendingRate) {
+        return
+            accounting[lastActivityDay][accounting[lastActivityDay].length - 1]
+                .lendingFee;
+    }
+
+    // @dev Returns lending fee
+    function getManagementFee() public view returns (uint256 lendingRate) {
+        return managementFee;
+    }
+
+    // @dev Sets last minting fee
+    function setLastMintingFee(uint256 _mintingFee) public onlyOwner {
+        mintingFee[~uint256(0)] = _mintingFee;
+    }
+
+    // @dev Adds minting fee
+    function addMintingFeeBracket(uint256 _mintingFeeLimit, uint256 _mintingFee)
+        public
+        onlyOwner
+    {
+        require(
+            _mintingFeeLimit > mintingFeeBracket[mintingFeeBracket.length - 1],
+            "New minting fee bracket needs to be bigger then last one"
+        );
+        mintingFeeBracket.push(_mintingFeeLimit);
+        mintingFee[_mintingFeeLimit] = _mintingFee;
+    }
+
+    // @dev Deletes last minting fee
+    function deleteLastMintingFeeBracket() public onlyOwner {
+        delete mintingFee[mintingFeeBracket[mintingFeeBracket.length - 1]];
+        mintingFeeBracket.length--;
+    }
+
+    // @dev Changes minting fee
+    function changeMintingLimit(
+        uint256 _position,
+        uint256 _mintingFeeLimit,
+        uint256 _mintingFee
+    ) public onlyOwner {
+        require(
+            _mintingFeeLimit > mintingFeeBracket[mintingFeeBracket.length - 1],
+            "New minting fee bracket needs to be bigger then last one"
+        );
+        if (_position != 0) {
+            require(
+                _mintingFeeLimit > mintingFeeBracket[_position - 1],
+                "New minting fee bracket needs to be bigger then last one"
+            );
+        }
+        if (_position < mintingFeeBracket.length - 1) {
+            require(
+                _mintingFeeLimit < mintingFeeBracket[_position + 1],
+                "New minting fee bracket needs to be smaller then next one"
+            );
+        }
+        mintingFeeBracket[_position] = _mintingFeeLimit;
+        mintingFee[_mintingFeeLimit] = _mintingFee;
+    }
+
+    function getMintingFee(uint256 cash) public view returns (uint256) {
+        // Define Start + End Index
+        uint256 startIndex = 0;
+        uint256 endIndex = mintingFeeBracket.length - 1;
+        uint256 middleIndex = endIndex / 2;
+
+        if (cash <= mintingFeeBracket[middleIndex]) {
+            endIndex = middleIndex;
+        } else {
+            startIndex = middleIndex + 1;
+        }
+
+        for (uint256 i = startIndex; i <= endIndex; i++) {
+            if (cash <= mintingFeeBracket[i]) {
+                return mintingFee[mintingFeeBracket[i]];
+            }
+        }
+        return mintingFee[~uint256(0)];
+    }
+}
+
+// File: contracts/Abstract/InterfaceStorage.sol
+
+pragma solidity ^0.5.0;
+
+
+interface InterfaceStorage {
+    function whitelistedAddresses(address) external view returns (bool);
+}
+
+// File: contracts/KYCVerifier.sol
+
+pragma solidity ^0.5.0;
+
+
+
+
+contract KYCVerifier is Initializable {
+    InterfaceStorage public persistentStorage;
+
+    function initialize(address _persistentStorage) public initializer {
+        persistentStorage = InterfaceStorage(_persistentStorage);
+    }
+
+    function isAddressWhitelisted(address userAddress)
+        public
+        view
+        returns (bool)
+    {
+        return persistentStorage.whitelistedAddresses(userAddress);
+    }
+}
+
+// File: contracts/CashPool.sol
+
+pragma solidity ^0.5.0;
+
+
+
+
+
+
+
+contract CashPool is Ownable {
+    using SafeMath for uint256;
+    KYCVerifier public kycVerifier;
+    PersistentStorage public persistentStorage;
+
+    uint256[2] public percentageOfFundsForColdStorage;
+    address public coldStorage;
+
+    event SetPercentageOfFundsForColdStorageEvent(
+        uint256[2] newPercentageOfFundsForColdStorage
+    );
+
+    function initialize(
+        address ownerAddress,
+        address _kycVerifier,
+        address _persistentStorage,
+        address _coldStorage,
+        uint256[2] memory _percentageOfFundsForColdStorage
+    ) public initializer {
+        require(
+            ownerAddress != address(0) &&
+                _kycVerifier != address(0) &&
+                _coldStorage != address(0) &&
+                _percentageOfFundsForColdStorage[1] != 0,
+            "params variables cannot be empty but _percentageOfFundsForColdStorage[0]"
+        );
+        initialize(ownerAddress);
+        kycVerifier = KYCVerifier(_kycVerifier);
+        persistentStorage = PersistentStorage(_persistentStorage);
+        coldStorage = _coldStorage;
+        percentageOfFundsForColdStorage = _percentageOfFundsForColdStorage;
+    }
+
+    function getBalance(address _token) public view returns (uint256) {
+        InterfaceInverseToken token_ = InterfaceInverseToken(_token);
+        uint256 tokenBalance = token_.balanceOf(address(this));
+        return tokenBalance;
+    }
+
+    // @dev Move tokens to cash pool
+    // @param _token ERC20 address
+    // @param whiteListedAddress address allowed to transfer to pool
+    // @param orderAmount amount to transfer to cash pool
+    function moveTokenToPool(
+        address _token,
+        address whiteListedAddress,
+        uint256 orderAmount
+    ) public onlyOwnerOrTokenSwap() returns (bool) {
+        InterfaceInverseToken token_ = InterfaceInverseToken(_token);
+        require(
+            kycVerifier.isAddressWhitelisted(whiteListedAddress),
+            "only whitelisted address are allowed to move tokens to pool"
+        );
+
+        uint256 percentageNumerator = percentageOfFundsForColdStorage[0];
+        uint256 percentageDenominator = percentageOfFundsForColdStorage[1];
+        uint256 amountForColdStorage = orderAmount.mul(percentageNumerator).div(
+            percentageDenominator
+        );
+
+        token_.transferFrom(whiteListedAddress, address(this), orderAmount);
+        token_.transfer(coldStorage, amountForColdStorage);
+
+        return true;
+    }
+
+    // @dev Move tokens out of cash pool
+    // @param _token ERC20 address
+    // @param destinationAddress address to send to
+    // @param orderAmount amount to transfer from cash pool
+    function moveTokenfromPool(
+        address _token,
+        address destinationAddress,
+        uint256 orderAmount
+    ) public onlyOwnerOrTokenSwap() returns (bool) {
+        InterfaceInverseToken token_ = InterfaceInverseToken(_token);
+
+        token_.transfer(destinationAddress, orderAmount);
+        return true;
+    }
+
+    modifier onlyOwnerOrTokenSwap() {
+        require(
+            isOwner() || _msgSender() == persistentStorage.tokenSwapManager(),
+            "caller is not the owner or token swap manager"
+        );
+        _;
+    }
+
+    // @dev Sets new coldStorage
+    // @param _newColdStorage Address for new cold storage wallet
+    function setColdStorage(address _newColdStorage) public onlyOwner {
+        require(_newColdStorage != address(0), "address cannot be empty");
+        coldStorage = _newColdStorage;
+    }
+
+    // @dev Sets percentage of funds to stay in contract. Owner only
+    // @param _newPercentageOfFundsForColdStorage List with two elements referencing percentage of funds for cold storage as a fraction
+    // e.g. 1/2 is [1,2]
+    function setPercentageOfFundsForColdStorage(
+        uint256[2] memory _newPercentageOfFundsForColdStorage
+    ) public onlyOwner {
+        require(
+            _newPercentageOfFundsForColdStorage[1] != 0,
+            "denominator should not be zero"
+        );
+        require(
+            _newPercentageOfFundsForColdStorage[0] <=
+                _newPercentageOfFundsForColdStorage[1],
+            "cannot set more than 100% for coldstorage"
+        );
+        percentageOfFundsForColdStorage[0] = _newPercentageOfFundsForColdStorage[0];
+        percentageOfFundsForColdStorage[1] = _newPercentageOfFundsForColdStorage[1];
+
+        emit SetPercentageOfFundsForColdStorageEvent(
+            _newPercentageOfFundsForColdStorage
+        );
+    }
+}
+
 // File: contracts/CompositionCalculator.sol
 
 pragma solidity ^0.5.0;
+
 
 
 
@@ -1967,30 +2023,29 @@ contract CompositionCalculator is Initializable {
     //*************************************************************************
 
     /**
-     * @dev Returns NAV for the given values
+     * @dev Returns NetTokenValue for the given values
      * @param _cashPosition The yearly average lending fee for borrowed balance
-     * @param _balance The balnce (dept/borrow) in crypto
+     * @param _balance The balance (dept/borrow) in crypto
      * @param _price The momentary price of the crypto
      */
-    function getNAV(uint256 _cashPosition, uint256 _balance, uint256 _price)
-        public
-        pure
-        returns (uint256 nav)
-    {
-        // Calculate NAV of Product
+    function getNetTokenValue(
+        uint256 _cashPosition,
+        uint256 _balance,
+        uint256 _price
+    ) public pure returns (uint256 netTokenValue) {
+        // Calculate NetTokenValue of Product
         uint256 balanceWorth = DSMath.wmul(_balance, _price);
         require(
             _cashPosition > balanceWorth,
             "The cash position needs to be bigger then the borrowed crypto is worth"
         );
-        nav = DSMath.sub(_cashPosition, balanceWorth);
-        return nav;
+        netTokenValue = DSMath.sub(_cashPosition, balanceWorth);
     }
 
     /**
      * @dev Returns the crypto amount to pay as lending fee
      * @param _lendingFee The yearly average lending fee for borrowed balance
-     * @param _balance The balnce (dept/borrow) in crypto
+     * @param _balance The balance (dept/borrow) in crypto
      * @param _days The days since the last fee calculation (Natural number)
      */
     function getLendingFeeInCrypto(
@@ -2006,25 +2061,23 @@ contract CompositionCalculator is Initializable {
 
     /**
      * Returns the change of balance with decimal at 18
-     * @param _nav The current nav of the product
-     * @param _balance The balnce (dept/borrow) in crypto
+     * @param _netTokenValue The current netTokenValue of the product
+     * @param _balance The balance (dept/borrow) in crypto
      * @param _price The momentary price of the crypto
      */
     function getNeededChangeInBalanceToRebalance(
-        uint256 _nav,
+        uint256 _netTokenValue,
         uint256 _balance,
         uint256 _price
-    ) public pure returns (uint256 changeInBalance, bool negative) {
+    ) public pure returns (uint256 changeInBalance, bool isNegative) {
         require(_price != 0, "Price cant be zero");
 
-        uint256 newAcountBalance = DSMath.wdiv(_nav, _price);
-
-        if (newAcountBalance >= _balance) {
-            changeInBalance = DSMath.sub(newAcountBalance, _balance);
-            negative = false;
+        uint256 newAccountBalance = DSMath.wdiv(_netTokenValue, _price);
+        isNegative = newAccountBalance < _balance;
+        if (!isNegative) {
+            changeInBalance = DSMath.sub(newAccountBalance, _balance);
         } else {
-            changeInBalance = DSMath.sub(_balance, newAcountBalance);
-            negative = true;
+            changeInBalance = DSMath.sub(_balance, newAccountBalance);
         }
     }
 
@@ -2038,7 +2091,7 @@ contract CompositionCalculator is Initializable {
         uint256 _a,
         uint256 _b,
         bool _isBNegative
-    ) internal pure returns (uint256 result) {
+    ) internal pure returns (uint256) {
         if (_isBNegative) {
             return _a.sub(_b);
         } else {
@@ -2066,7 +2119,7 @@ contract CompositionCalculator is Initializable {
         public
         pure
         returns (
-            uint256 endNav,
+            uint256 endNetTokenValue,
             uint256 endBalance,
             uint256 endCashPosition,
             uint256 feeInFiat,
@@ -2075,7 +2128,7 @@ contract CompositionCalculator is Initializable {
         )
     {
         require(_price != 0, "Price cant be zero");
-        // Update Calculation for NAV, Cash Position, Loan Positions, and Accrued Fees
+        // Update Calculation for NetTokenValue, Cash Position, Loan Positions, and Accrued Fees
 
         //remove fees
         uint256 feeInCrypto = getLendingFeeInCrypto(
@@ -2095,7 +2148,7 @@ contract CompositionCalculator is Initializable {
 
         //calculte change in balance (rebalance)
         endBalance = DSMath.wdiv(
-            getNAV(endCashPosition, _balance, _price),
+            getNetTokenValue(endCashPosition, _balance, _price),
             _price
         );
 
@@ -2103,7 +2156,7 @@ contract CompositionCalculator is Initializable {
             changeInBalance,
             isChangeInBalanceNeg
         ) = getNeededChangeInBalanceToRebalance(
-            getNAV(endCashPosition, _balance, _price),
+            getNetTokenValue(endCashPosition, _balance, _price),
             _balance,
             _price
         );
@@ -2119,7 +2172,11 @@ contract CompositionCalculator is Initializable {
             DSMath.wmul(changeInBalance, _price),
             isChangeInBalanceNeg
         );
-        endNav = getNAV(endCashPosition, endBalance, _price);
+        endNetTokenValue = getNetTokenValue(
+            endCashPosition,
+            endBalance,
+            _price
+        );
     }
 
     /**
@@ -2140,7 +2197,7 @@ contract CompositionCalculator is Initializable {
         public
         pure
         returns (
-            uint256 endNav,
+            uint256 endNetTokenValue,
             uint256 endBalance,
             uint256 endCashPosition,
             uint256 feeInFiat,
@@ -2178,9 +2235,21 @@ contract CompositionCalculator is Initializable {
         require(_spotPrice != 0, "Price cant be zero");
         require(_totalTokenSupply != 0, "Token supply cant be zero");
 
-        uint256 exNav = getNAV(_cashPosition, _balance, _spotPrice);
-        uint256 navPerToken = DSMath.wdiv(exNav, _totalTokenSupply);
-        tokenAmountCreated = DSMath.wdiv(_cash, navPerToken);
+        uint256 netTokenValue = getNetTokenValue(
+            _cashPosition,
+            _balance,
+            _spotPrice
+        );
+        uint256 netTokenValueTimesTokenAmount = DSMath.wmul(
+            netTokenValue,
+            _totalTokenSupply
+        );
+        require(
+            netTokenValueTimesTokenAmount != 0,
+            "netTokenValueTimesTokenAmount cant be zero"
+        );
+
+        tokenAmountCreated = DSMath.wdiv(_cash, netTokenValueTimesTokenAmount);
     }
 
     /**
@@ -2201,15 +2270,20 @@ contract CompositionCalculator is Initializable {
     ) public pure returns (uint256 cashFromTokenRedeem) {
         require(_spotPrice != 0, "Price cant be zero");
         require(_totalTokenSupply != 0, "Token supply cant be zero");
-        require(
-            _totalTokenSupply >= _tokenAmount,
-            "Token redeem cant be bigger then supply"
+
+        uint256 netTokenValue = getNetTokenValue(
+            _cashPosition,
+            _balance,
+            _spotPrice
         );
-
-        uint256 exNav = getNAV(_cashPosition, _balance, _spotPrice);
-        uint256 navPerToken = DSMath.wdiv(exNav, _totalTokenSupply);
-
-        cashFromTokenRedeem = DSMath.wmul(_tokenAmount, navPerToken);
+        uint256 netTokenValueTimesTokenAmount = DSMath.wmul(
+            netTokenValue,
+            _tokenAmount
+        );
+        cashFromTokenRedeem = DSMath.wdiv(
+            netTokenValueTimesTokenAmount,
+            _totalTokenSupply
+        );
     }
 
     /**
@@ -2231,23 +2305,27 @@ contract CompositionCalculator is Initializable {
     //*************************************************************************
 
     /**
-     * @dev Returns the current NAV
+     * @dev Returns the current NetTokenValue
      */
-    function getCurrentNAV() public view returns (uint256 nav) {
+    function getCurrentNetTokenValue()
+        public
+        view
+        returns (uint256 netTokenValue)
+    {
         uint256 totalTokenSupply = inverseToken.totalSupply();
         require(totalTokenSupply != 0, "Token supply cant be zero");
 
         uint256 cashPosition = DSMath.wmul(
             totalTokenSupply,
-            persistentStorage.getCashPositionPerToken()
+            persistentStorage.getCashPositionPerTokenUnit()
         );
         uint256 balance = DSMath.wmul(
             totalTokenSupply,
-            persistentStorage.getBalancePerToken()
+            persistentStorage.getBalancePerTokenUnit()
         );
         uint256 price = persistentStorage.getPrice();
 
-        nav = getNAV(cashPosition, balance, price);
+        netTokenValue = getNetTokenValue(cashPosition, balance, price);
     }
 
     /**
@@ -2273,22 +2351,11 @@ contract CompositionCalculator is Initializable {
         uint256 _cash,
         uint256 _spotPrice
     ) public view returns (uint256 tokenAmountCreated) {
-        uint256 totalTokenSupply = inverseToken.totalSupply();
-        require(totalTokenSupply != 0, "Token supply cant be zero");
-        uint256 cashPosition = DSMath.wmul(
-            totalTokenSupply,
-            persistentStorage.getCashPositionPerToken()
-        );
-
         uint256 cashAfterFee = removeCurrentMintingFeeFromCash(_cash);
-        uint256 balance = DSMath.wmul(
-            totalTokenSupply,
-            persistentStorage.getBalancePerToken()
-        );
         tokenAmountCreated = getTokenAmountCreatedByCash(
-            cashPosition,
-            balance,
-            totalTokenSupply,
+            persistentStorage.getCashPositionPerTokenUnit(),
+            persistentStorage.getBalancePerTokenUnit(),
+            1 ether,
             cashAfterFee,
             _spotPrice
         );
@@ -2307,22 +2374,33 @@ contract CompositionCalculator is Initializable {
         uint256 totalTokenSupply = inverseToken.totalSupply();
         require(totalTokenSupply != 0, "Token supply cant be zero");
 
-        uint256 cashPosition = DSMath.wmul(
-            totalTokenSupply,
-            persistentStorage.getCashPositionPerToken()
+        uint256 lendingFee = persistentStorage.getLendingFee();
+        uint256 daysSinceLastRebalance = getDaysSinceLastRebalance() + 1;
+
+        uint256 cryptoForLendingFee = getLendingFeeInCrypto(
+            lendingFee,
+            DSMath.wmul(
+                _tokenAmount,
+                persistentStorage.getBalancePerTokenUnit()
+            ),
+            daysSinceLastRebalance
         );
-        uint256 balance = DSMath.wmul(
-            totalTokenSupply,
-            persistentStorage.getBalancePerToken()
+        uint256 fiatForLendingFee = DSMath.wmul(
+            cryptoForLendingFee,
+            _spotPrice
         );
+
         uint256 cashFromToken = getCashAmountCreatedByToken(
-            cashPosition,
-            balance,
-            totalTokenSupply,
+            persistentStorage.getCashPositionPerTokenUnit(),
+            persistentStorage.getBalancePerTokenUnit(),
+            1 ether,
             _tokenAmount,
             _spotPrice
         );
-        cashFromTokenRedeem = removeCurrentMintingFeeFromCash(cashFromToken);
+
+        cashFromTokenRedeem = removeCurrentMintingFeeFromCash(
+            DSMath.sub(cashFromToken, fiatForLendingFee)
+        );
     }
 
     function getDaysSinceLastRebalance()
@@ -2336,7 +2414,7 @@ contract CompositionCalculator is Initializable {
         uint256 day = lastRebalanceDay - year.mul(10000) - month.mul(100);
 
         uint256 startDate = DateTimeLibrary.timestampFromDate(year, month, day);
-        daysSinceLastRebalance = (now - startDate) / 60 / 60 / 24;
+        daysSinceLastRebalance = (block.timestamp - startDate) / 60 / 60 / 24;
     }
 
     /**
@@ -2351,7 +2429,7 @@ contract CompositionCalculator is Initializable {
         uint256 lendingFee = persistentStorage.getLendingFee();
         uint256 balance = DSMath.wmul(
             totalTokenSupply,
-            persistentStorage.getBalancePerToken()
+            persistentStorage.getBalancePerTokenUnit()
         );
         uint256 daysSinceLastRebalance = getDaysSinceLastRebalance();
 
@@ -2371,12 +2449,13 @@ contract CompositionCalculator is Initializable {
         returns (uint256 neededChangeInBalance, bool isNegative)
     {
         uint256 totalTokenSupply = inverseToken.totalSupply();
-        uint256 nav = getCurrentNAV();
+        uint256 netTokenValue = getCurrentNetTokenValue();
         uint256 balance = DSMath.wmul(
             totalTokenSupply,
-            persistentStorage.getBalancePerToken()
+            persistentStorage.getBalancePerTokenUnit()
         );
-        return getNeededChangeInBalanceToRebalance(nav, balance, _price);
+        return
+            getNeededChangeInBalanceToRebalance(netTokenValue, balance, _price);
     }
 
     /**
@@ -2386,9 +2465,8 @@ contract CompositionCalculator is Initializable {
         uint256 totalTokenSupply = inverseToken.totalSupply();
         totalBalance = DSMath.wmul(
             totalTokenSupply,
-            persistentStorage.getBalancePerToken()
+            persistentStorage.getBalancePerTokenUnit()
         );
-        return totalBalance;
     }
 
     /**
@@ -2399,7 +2477,7 @@ contract CompositionCalculator is Initializable {
         public
         view
         returns (
-            uint256 endNav,
+            uint256 endNetTokenValue,
             uint256 endBalance,
             uint256 endCashPosition,
             uint256 feeInFiat,
@@ -2411,11 +2489,11 @@ contract CompositionCalculator is Initializable {
         uint256 totalTokenSupply = inverseToken.totalSupply();
         uint256 balance = DSMath.wmul(
             totalTokenSupply,
-            persistentStorage.getBalancePerToken()
+            persistentStorage.getBalancePerTokenUnit()
         );
         uint256 cashPosition = DSMath.wmul(
             totalTokenSupply,
-            persistentStorage.getCashPositionPerToken()
+            persistentStorage.getCashPositionPerTokenUnit()
         );
         uint256 daysSinceLastRebalance = getDaysSinceLastRebalance();
         uint256 minRebalanceAmount = persistentStorage.minRebalanceAmount();
@@ -2442,9 +2520,10 @@ contract CompositionCalculator is Initializable {
         uint256 totalTokenSupply = inverseToken.totalSupply();
         totalCashPosition = DSMath.wmul(
             totalTokenSupply,
-            persistentStorage.getCashPositionPerToken()
+            persistentStorage.getCashPositionPerTokenUnit()
         );
     }
+
     function wmul(uint256 x, uint256 y) external pure returns (uint256 z) {
         z = DSMath.wmul(x, y);
     }
@@ -2452,12 +2531,12 @@ contract CompositionCalculator is Initializable {
     function wdiv(uint256 x, uint256 y) external pure returns (uint256 z) {
         z = DSMath.wdiv(x, y);
     }
-
 }
 
 // File: contracts/TokenSwapManager.sol
 
 pragma solidity ^0.5.0;
+
 
 
 
@@ -2477,7 +2556,7 @@ contract TokenSwapManager is Initializable, Ownable {
     address public inverseToken;
 
     KYCVerifier public kycVerifier;
-    CollateralPool public collateralPool;
+    CashPool public cashPool;
     PersistentStorage public persistentStorage;
     CompositionCalculator public compositionCalculator;
 
@@ -2490,8 +2569,8 @@ contract TokenSwapManager is Initializable, Ownable {
 
     event RebalanceEvent(
         uint256 price,
-        uint256 cashPositionPerToken,
-        uint256 balancePerToken,
+        uint256 cashPositionPerTokenUnit,
+        uint256 balancePerTokenUnit,
         uint256 lendingFee
     );
 
@@ -2499,19 +2578,28 @@ contract TokenSwapManager is Initializable, Ownable {
         address _owner,
         address _stablecoin,
         address _inverseToken,
-        address _persistentStorage,
-        address _kycVerifier,
-        address _collateralPool,
+        address _cashPool,
         address _compositionCalculator
     ) public initializer {
         initialize(_owner);
 
+        require(
+            _owner != address(0) &&
+                _stablecoin != address(0) &&
+                _inverseToken != address(0) &&
+                _cashPool != address(0) &&
+                _compositionCalculator != address(0),
+            "addresses cannot be zero"
+        );
+
         stablecoin = _stablecoin;
         inverseToken = _inverseToken;
 
-        persistentStorage = PersistentStorage(_persistentStorage);
-        kycVerifier = KYCVerifier(_kycVerifier);
-        collateralPool = CollateralPool(_collateralPool);
+        cashPool = CashPool(_cashPool);
+        persistentStorage = PersistentStorage(
+            address(cashPool.persistentStorage())
+        );
+        kycVerifier = KYCVerifier(address(cashPool.kycVerifier()));
         compositionCalculator = CompositionCalculator(_compositionCalculator);
     }
 
@@ -2520,13 +2608,13 @@ contract TokenSwapManager is Initializable, Ownable {
     //////////////// Redeem: Recieve Stable Coin ////////////////
 
     function createOrder(
-        string memory result,
+        bool success,
         uint256 tokensGiven,
         uint256 tokensRecieved,
         uint256 avgBlendedFee,
         uint256 executionPrice,
         address whitelistedAddress
-    ) public onlyOwnerOrBridge() notPausedOrShutdown() returns (bool success) {
+    ) public onlyOwnerOrBridge() notPausedOrShutdown() returns (bool retVal) {
         // Require is Whitelisted
         require(
             kycVerifier.isAddressWhitelisted(whitelistedAddress),
@@ -2534,8 +2622,12 @@ contract TokenSwapManager is Initializable, Ownable {
         );
 
         // Return Funds if Bridge Pass an Error
-        if (result.compareTo("ERROR")) {
-            transferTokenFromPool(stablecoin, whitelistedAddress, tokensGiven);
+        if (!success) {
+            transferTokenFromPool(
+                stablecoin,
+                whitelistedAddress,
+                normalizeUSDC(tokensGiven)
+            );
             return false;
         }
 
@@ -2554,19 +2646,8 @@ contract TokenSwapManager is Initializable, Ownable {
             tokensGiven,
             tokensRecieved,
             avgBlendedFee,
-            100000000
-        );
-        persistentStorage.setOrder(
-            "CREATE",
-            tokensGiven,
-            tokensRecieved,
-            avgBlendedFee,
-            100000000
-        );
-        persistentStorage.setLockedOrderForUser(
-            whitelistedAddress,
-            tokensRecieved,
-            block.timestamp
+            0,
+            false
         );
 
         // Write Successful Order to Log
@@ -2582,30 +2663,24 @@ contract TokenSwapManager is Initializable, Ownable {
         token.mintTokens(whitelistedAddress, tokensRecieved);
 
         return true;
-
     }
 
     function redeemOrder(
-        string memory result,
+        bool success,
         uint256 tokensGiven,
         uint256 tokensRecieved,
         uint256 avgBlendedFee,
         uint256 executionPrice,
         address whitelistedAddress
-    ) public onlyOwnerOrBridge() notPausedOrShutdown() returns (bool success) {
-        // Require Unlocked and Whitelisted
-        uint256 lockedAmount = getLockedAmount(whitelistedAddress);
-        require(
-            lockedAmount == 0 || tokensGiven < lockedAmount,
-            "cannot redeem locked tokens"
-        );
+    ) public onlyOwnerOrBridge() notPausedOrShutdown() returns (bool retVal) {
+        // Require Whitelisted
         require(
             kycVerifier.isAddressWhitelisted(whitelistedAddress),
             "only whitelisted address may place orders"
         );
 
         // Return Funds if Bridge Pass an Error
-        if (result.compareTo("ERROR")) {
+        if (!success) {
             transferTokenFromPool(
                 inverseToken,
                 whitelistedAddress,
@@ -2629,30 +2704,18 @@ contract TokenSwapManager is Initializable, Ownable {
             tokensGiven,
             tokensRecieved,
             avgBlendedFee,
-            100000000
-        );
-        persistentStorage.setOrder(
-            "REDEEM",
-            tokensGiven,
-            tokensRecieved,
-            avgBlendedFee,
-            100000000
+            0,
+            false
         );
 
-        // Write Successful Order Log
-        writeOrderResponse(
-            "REDEEM",
-            whitelistedAddress,
-            tokensGiven,
-            tokensRecieved
-        );
+        // Redeem Stablecoin or Perform Delayed Settlement
+        redeemFunds(tokensGiven, tokensRecieved, whitelistedAddress);
 
         // Burn Tokens to Address
         InterfaceInverseToken token = InterfaceInverseToken(inverseToken);
-        token.burnTokens(address(collateralPool), tokensGiven);
+        token.burnTokens(address(cashPool), tokensGiven);
 
         return true;
-
     }
 
     function writeOrderResponse(
@@ -2662,14 +2725,9 @@ contract TokenSwapManager is Initializable, Ownable {
         uint256 tokensRecieved
     ) internal {
         require(
-            tokensGiven > 0 && tokensRecieved > 0,
+            tokensGiven != 0 && tokensRecieved != 0,
             "amount must be greater than 0"
         );
-        require(
-            orderType.compareTo("CREATE") || orderType.compareTo("REDEEM"),
-            "must be create or redeem"
-        );
-        require(whiteListedAddress != address(0), "address cannot be 0");
 
         emit SuccessfulOrder(
             orderType,
@@ -2679,25 +2737,86 @@ contract TokenSwapManager is Initializable, Ownable {
         );
     }
 
-    function getLockedAmount(address recieverAddress)
-        public
-        view
-        returns (uint256 lockedAmount)
-    {
-        uint256 count = persistentStorage.getLockedOrdersArraySize(
-            recieverAddress
+    function settleDelayedFunds(
+        uint256 tokensToRedeem,
+        address whitelistedAddress
+    ) public onlyOwnerOrBridge {
+        require(
+            kycVerifier.isAddressWhitelisted(whitelistedAddress),
+            "only whitelisted may redeem funds"
         );
-        for (uint256 index = count; index > 0; index--) {
-            uint256 timestamp;
-            uint256 amountOfTokens;
 
-            (amountOfTokens, timestamp) = persistentStorage
-                .getLockedOrderForUser(recieverAddress, index - 1);
-            if (block.timestamp.sub(timestamp) > 3600) break;
-            lockedAmount = lockedAmount.add(amountOfTokens);
+        bool isSufficientFunds = isHotWalletSufficient(tokensToRedeem);
+        require(
+            isSufficientFunds == true,
+            "not enough funds in the hot wallet"
+        );
+
+        uint256 tokensOutstanding = persistentStorage
+            .getDelayedRedemptionsByUser(whitelistedAddress);
+        uint256 tokensRemaining = DSMath.sub(tokensOutstanding, tokensToRedeem);
+
+        persistentStorage.setDelayedRedemptionsByUser(
+            tokensRemaining,
+            whitelistedAddress
+        );
+        transferTokenFromPool(
+            stablecoin,
+            whitelistedAddress,
+            normalizeUSDC(tokensToRedeem)
+        );
+    }
+
+    function redeemFunds(
+        uint256 tokensGiven,
+        uint256 tokensToRedeem,
+        address whitelistedAddress
+    ) internal {
+        bool isSufficientFunds = isHotWalletSufficient(tokensToRedeem);
+
+        if (isSufficientFunds) {
+            transferTokenFromPool(
+                stablecoin,
+                whitelistedAddress,
+                normalizeUSDC(tokensToRedeem)
+            );
+            writeOrderResponse(
+                "REDEEM",
+                whitelistedAddress,
+                tokensGiven,
+                tokensToRedeem
+            );
+        } else {
+            uint256 tokensOutstanding = persistentStorage
+                .getDelayedRedemptionsByUser(whitelistedAddress);
+            tokensOutstanding = DSMath.add(tokensOutstanding, tokensToRedeem);
+            persistentStorage.setDelayedRedemptionsByUser(
+                tokensOutstanding,
+                whitelistedAddress
+            );
+            writeOrderResponse(
+                "REDEEM NO SETTLEMENT",
+                whitelistedAddress,
+                tokensGiven,
+                tokensToRedeem
+            );
         }
+    }
 
-        return lockedAmount;
+    function isHotWalletSufficient(uint256 tokensToRedeem)
+        internal
+        view
+        returns (bool)
+    {
+        InterfaceInverseToken _stablecoin = InterfaceInverseToken(stablecoin);
+        uint256 stablecoinBalance = _stablecoin.balanceOf(address(cashPool));
+
+        if (normalizeUSDC(tokensToRedeem) > stablecoinBalance) return false;
+        return true;
+    }
+
+    function normalizeUSDC(uint256 usdcValue) public pure returns (uint256) {
+        return usdcValue / 10**12;
     }
 
     ////////////////    Daily Rebalance     ////////////////
@@ -2711,8 +2830,8 @@ contract TokenSwapManager is Initializable, Ownable {
         uint256 _totalTokenSupply
     ) internal view returns (uint256, uint256) {
         // Rebalance Inputs : Trade Execution Price + Updated Loan Positions (repaid and outstanding)
-        // Rebalance Outputs : Collateral Pool Adjustment + Updated PCF (calculated through CompositionCalculator.sol)
-        // Collater Pool Adjustment Handled Through Helper Functions Below
+        // Rebalance Outputs : Cash Pool Adjustment + Updated PCF (calculated through CompositionCalculator.sol)
+        // Cash Pool Adjustment Handled Through Helper Functions Below
         uint256 endBalance;
         uint256 endCashPosition;
         (, endBalance, endCashPosition, , , ) = compositionCalculator
@@ -2734,23 +2853,24 @@ contract TokenSwapManager is Initializable, Ownable {
         );
         require(endBalance == _endBalance, "The balance should match.");
 
-        uint256 cashPositionPerToken = DSMath.wdiv(
+        uint256 cashPositionPerTokenUnit = DSMath.wdiv(
             endCashPosition,
             totalTokenSupply
         );
-        uint256 balancePerToken = DSMath.wdiv(endBalance, totalTokenSupply);
+        uint256 balancePerTokenUnit = DSMath.wdiv(endBalance, totalTokenSupply);
 
-        return (cashPositionPerToken, balancePerToken);
+        return (cashPositionPerTokenUnit, balancePerTokenUnit);
     }
+
     /**
-    * @dev Sets the accounting of today for the curent price
-    * @param _price The momentary price of the crypto
-    * @param _totalFee The total fees
-    * @param _lendingFee The blended lending fee of the balance
-    * @param _endCashPosition The total cashpostion on the product
-    * @param _endBalance The total dept on the product
-    * @param _totalTokenSupply The token supply with witch expected
-    */
+     * @dev Sets the accounting of today for the curent price
+     * @param _price The momentary price of the crypto
+     * @param _totalFee The total fees
+     * @param _lendingFee The blended lending fee of the balance
+     * @param _endCashPosition The total cashpostion on the product
+     * @param _endBalance The total dept on the product
+     * @param _totalTokenSupply The token supply with witch expected
+     */
     function dailyRebalance(
         uint256 _price,
         uint256 _totalFee,
@@ -2760,9 +2880,12 @@ contract TokenSwapManager is Initializable, Ownable {
         uint256 _totalTokenSupply
     ) public onlyOwnerOrBridge() notPausedOrShutdown() {
         // Rebalance Inputs : Trade Execution Price + Updated Loan Positions (repaid and outstanding)
-        // Rebalance Outputs : Collateral Pool Adjustment + Updated PCF (calculated through CompositionCalculator.sol)
+        // Rebalance Outputs : Cash Pool Adjustment + Updated PCF (calculated through CompositionCalculator.sol)
         // Collater Pool Adjustment Handled Through Helper Functions Below
-        (uint256 cashPositionPerToken, uint256 balancePerToken) = _dailyRebalance(
+        (
+            uint256 cashPositionPerTokenUnit,
+            uint256 balancePerTokenUnit
+        ) = _dailyRebalance(
             _price,
             _totalFee,
             _endCashPosition,
@@ -2771,26 +2894,26 @@ contract TokenSwapManager is Initializable, Ownable {
         );
         persistentStorage.setAccounting(
             _price,
-            cashPositionPerToken,
-            balancePerToken,
+            cashPositionPerTokenUnit,
+            balancePerTokenUnit,
             _lendingFee
         );
         emit RebalanceEvent(
             _price,
-            cashPositionPerToken,
-            balancePerToken,
+            cashPositionPerTokenUnit,
+            balancePerTokenUnit,
             _lendingFee
         );
     }
 
     /**
-    * @dev Sets the accounting of today for the curent price
-    * @param _price The momentary price of the crypto
-    * @param _lendingFee The blended lending fee of the balance
-    * @param _endCashPosition The total cashpostion on the product
-    * @param _endBalance The total dept on the product
-    * @param _totalTokenSupply The token supply with witch expected
-    */
+     * @dev Sets the accounting of today for the curent price
+     * @param _price The momentary price of the crypto
+     * @param _lendingFee The blended lending fee of the balance
+     * @param _endCashPosition The total cashpostion on the product
+     * @param _endBalance The total dept on the product
+     * @param _totalTokenSupply The token supply with witch expected
+     */
     function thresholdRebalance(
         uint256 _price,
         uint256 _lendingFee,
@@ -2800,9 +2923,12 @@ contract TokenSwapManager is Initializable, Ownable {
     ) public onlyOwnerOrBridge() notPausedOrShutdown() {
         // First Sanity Check Threshold Crossing
         // Rebalance Inputs : Trade Execution Price + Updated Loan Positions (repaid and outstanding)
-        // Rebalance Outputs : Collateral Pool Adjustment + Updated PCF (calculated through CompositionCalculator.sol)
-        // Collater Pool Adjustment Handled Through Helper Functions Below
-        (uint256 cashPositionPerToken, uint256 balancePerToken) = _dailyRebalance(
+        // Rebalance Outputs : Cash Pool Adjustment + Updated PCF (calculated through CompositionCalculator.sol)
+        // Cash Pool Adjustment Handled Through Helper Functions Below
+        (
+            uint256 cashPositionPerTokenUnit,
+            uint256 balancePerTokenUnit
+        ) = _dailyRebalance(
             _price,
             0,
             _endCashPosition,
@@ -2811,14 +2937,14 @@ contract TokenSwapManager is Initializable, Ownable {
         );
         persistentStorage.setAccountingForLastActivityDay(
             _price,
-            cashPositionPerToken,
-            balancePerToken,
+            cashPositionPerTokenUnit,
+            balancePerTokenUnit,
             _lendingFee
         );
         emit RebalanceEvent(
             _price,
-            cashPositionPerToken,
-            balancePerToken,
+            cashPositionPerTokenUnit,
+            balancePerTokenUnit,
             _lendingFee
         );
     }
@@ -2834,9 +2960,9 @@ contract TokenSwapManager is Initializable, Ownable {
         uint256 orderAmount
     ) internal returns (bool) {
         // Check orderAmount <= availableAmount
-        // Transfer USDC to Stablecoin Collateral Pool
+        // Transfer USDC to Stablecoin Cash Pool
         return
-            collateralPool.moveTokenToPool(
+            cashPool.moveTokenToPool(
                 tokenContract,
                 whiteListedAddress,
                 orderAmount
@@ -2851,7 +2977,7 @@ contract TokenSwapManager is Initializable, Ownable {
         // Check orderAmount <= availableAmount
         // Transfer USDC to Destination Address
         return
-            collateralPool.moveTokenfromPool(
+            cashPool.moveTokenfromPool(
                 tokenContract,
                 destinationAddress,
                 orderAmount
@@ -2868,8 +2994,10 @@ contract TokenSwapManager is Initializable, Ownable {
 
     modifier notPausedOrShutdown() {
         require(persistentStorage.isPaused() == false, "contract is paused");
-        require(persistentStorage.isShutdown() != 1, "contract is shutdown");
+        require(
+            persistentStorage.isShutdown() == false,
+            "contract is shutdown"
+        );
         _;
     }
-
 }

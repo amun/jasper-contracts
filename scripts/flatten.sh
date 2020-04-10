@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-
+mkdir flats
 rm -rf flats/*
 
 ./node_modules/.bin/truffle-flattener contracts/CompositionCalculator.sol > flats/CompositionCalculator.sol
@@ -7,6 +7,6 @@ rm -rf flats/*
 ./node_modules/.bin/truffle-flattener contracts/PersistentStorage.sol > flats/PersistentStorage.sol
 ./node_modules/.bin/truffle-flattener contracts/Token/USDC.sol > flats/USDC.sol
 ./node_modules/.bin/truffle-flattener contracts/Token/InverseToken.sol > flats/InverseToken.sol
-./node_modules/.bin/truffle-flattener contracts/CollateralPool.sol > flats/CollateralPool.sol
+./node_modules/.bin/truffle-flattener contracts/CashPool.sol > flats/CashPool.sol
 ./node_modules/.bin/truffle-flattener contracts/KYCVerifier.sol > flats/KYCVerifier.sol
 

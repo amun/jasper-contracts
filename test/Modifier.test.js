@@ -10,7 +10,7 @@ const BigNumber = require("bignumber.js");
 const ERC20WithMinting = contract.fromArtifact("InverseToken");
 const PersistentStorage = contract.fromArtifact("PersistentStorage");
 const KYCVerifier = contract.fromArtifact("KYCVerifier");
-const CollateralPool = contract.fromArtifact("CollateralPool");
+const CashPool = contract.fromArtifact("CashPool");
 const TokenSwapManager = contract.fromArtifact("TokenSwapManager");
 const CompositionCalculator = contract.fromArtifact("CompositionCalculator");
 const sixtyPercentInArrayFraction = [3, 5];
@@ -51,9 +51,9 @@ describe("Modifier", function() {
     this.kycVerifier = await KYCVerifier.new({ from: owner });
     await this.kycVerifier.initialize(this.storage.address);
 
-    // Deploy Collateral Pool
-    this.collateralPool = await CollateralPool.new({ from: owner });
-    await this.collateralPool.initialize(
+    // Deploy Cash Pool
+    this.cashPool = await CashPool.new({ from: owner });
+    await this.cashPool.initialize(
       owner,
       this.kycVerifier.address,
       this.storage.address,
@@ -76,9 +76,7 @@ describe("Modifier", function() {
       owner,
       this.stableCoin.address,
       this.inverseToken.address,
-      this.storage.address,
-      this.kycVerifier.address,
-      this.collateralPool.address,
+      this.cashPool.address,
       this.compositionCalculator.address
     );
     await this.storage.setTokenSwapManager(this.tokenSwapManager.address, {
@@ -116,7 +114,7 @@ describe("Modifier", function() {
 
     it("successfully place create order from bridge", async function() {
       this.reciept = await this.tokenSwapManager.createOrder(
-        "SUCCESS", // Order Type
+        true, // Order Type
         tokensGiven, // Tokens Given
         tokensRecieved, // Tokens Recieved
         2, // Avg Blended Fee
@@ -136,7 +134,7 @@ describe("Modifier", function() {
     it("unsuccessfully place create order from user", async function() {
       await expectRevert(
         this.tokenSwapManager.createOrder(
-          "SUCCESS",
+          true,
           tokensGiven,
           tokensRecieved,
           2,
@@ -152,7 +150,7 @@ describe("Modifier", function() {
       await this.storage.setIsPaused(true, { from: owner });
       await expectRevert(
         this.tokenSwapManager.createOrder(
-          "SUCCESS",
+          true,
           tokensGiven,
           tokensRecieved,
           2,
@@ -168,7 +166,7 @@ describe("Modifier", function() {
       await this.storage.setIsPaused(true, { from: owner });
       await this.storage.setIsPaused(false, { from: owner });
       await this.tokenSwapManager.createOrder(
-        "SUCCESS",
+        true,
         tokensGiven,
         tokensRecieved,
         2,
@@ -179,10 +177,10 @@ describe("Modifier", function() {
     });
 
     it("shuts down contract", async function() {
-      await this.storage.setIsShutdown({ from: owner });
+      await this.storage.shutdown({ from: owner });
       await expectRevert(
         this.tokenSwapManager.createOrder(
-          "SUCCESS",
+          true,
           tokensGiven,
           tokensRecieved,
           2,
@@ -227,16 +225,16 @@ describe("Modifier", function() {
     });
   });
 
-  describe("#collateralPool", function() {
+  describe("#cashPool", function() {
     beforeEach(async function() {
       await this.storage.setWhitelistedAddress(user, { from: owner });
     });
 
     it("allows owner to move tokens from pool", async function() {
-      await this.inverseToken.mintTokens(this.collateralPool.address, 10, {
+      await this.inverseToken.mintTokens(this.cashPool.address, 10, {
         from: owner
       });
-      await this.collateralPool.moveTokenfromPool(
+      await this.cashPool.moveTokenfromPool(
         this.inverseToken.address,
         user,
         5,
@@ -248,12 +246,12 @@ describe("Modifier", function() {
     });
 
     it("does not allow user to move tokens from pool", async function() {
-      await this.inverseToken.mintTokens(this.collateralPool.address, 10, {
+      await this.inverseToken.mintTokens(this.cashPool.address, 10, {
         from: owner
       });
 
       await expectRevert(
-        this.collateralPool.moveTokenfromPool(
+        this.cashPool.moveTokenfromPool(
           this.inverseToken.address,
           bridge,
           5,

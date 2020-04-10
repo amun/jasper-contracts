@@ -17,10 +17,16 @@ Reset contracts (compile, deploy, mint USDC, set data in DB if available)
 > TODO: The first run of the script fails. The second succeed. Fix that
 
 ```
-npm run reset:contracts 0x9e74E6Be10B63A7442184dFFD633fbed80175B34
+# From the <project_root>/Contracts dir, run:
+# In full dapp mode via multisig contract owner
+npm run reset:contracts
 
-# npm run reset:contracts <ownerAddress>
-# Note that ownerAddress in dev is static at 0x9e74E6Be10B63A7442184dFFD633fbed80175B34
+# In contracts-only mode, with direct owner of the contracts
+npm run reset:contracts <ownerAddress>
+
+# In development, due to the static mnemonic you can
+# npm run reset:contracts 0x9e74E6Be10B63A7442184dFFD633fbed80175B34
+
 ```
 
 ### Manual contracts compilation
@@ -142,4 +148,3 @@ The rebalance workflow is detailed below:
 - It then reads the Crypto Price from the trading desk and decides to either **increase or decrease short exposure**.
 - The trading engine then executing the short-sell / long-repay action
 - Once confirmed, a call to the TSM is made to initiates a calculation of the NAV/Cash Position of the Inverse Tokens.
-

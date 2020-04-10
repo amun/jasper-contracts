@@ -6,19 +6,17 @@
 - Daily Rebalance and Threshold Rebalance
 - Composition PCF And Funding Rate [WIP]
 
-
 ### List of Smart Contracts:
 
 - /Admin Multi Sig
   - Inverse Provider MultiSig
   - Owner MultiSig
 - Token Swap Manager
-- Collateral Pool
+- Cash Pool
 - Composition Calculator
 - Inverse Token
 - KYC Verifier
 - Persistent Storage
-
 
 ### Types of Contracts:
 
@@ -41,4 +39,3 @@
   - User who can participate in Creation + Redemption Process
 - HODLER
   - Token Holder w/o Creation + Redemption Rights
-

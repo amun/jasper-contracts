@@ -8,6 +8,7 @@ import "./utils/DateTimeLibrary.sol";
 import "./PersistentStorage.sol";
 import "./Abstract/InterfaceInverseToken.sol";
 
+
 /**
  * @dev uint256 are expected to use last 18 numbers as decimal points except when specifid differently in @params
  */
@@ -30,30 +31,29 @@ contract CompositionCalculator is Initializable {
     //*************************************************************************
 
     /**
-     * @dev Returns NAV for the given values
+     * @dev Returns NetTokenValue for the given values
      * @param _cashPosition The yearly average lending fee for borrowed balance
-     * @param _balance The balnce (dept/borrow) in crypto
+     * @param _balance The balance (dept/borrow) in crypto
      * @param _price The momentary price of the crypto
      */
-    function getNAV(uint256 _cashPosition, uint256 _balance, uint256 _price)
-        public
-        pure
-        returns (uint256 nav)
-    {
-        // Calculate NAV of Product
+    function getNetTokenValue(
+        uint256 _cashPosition,
+        uint256 _balance,
+        uint256 _price
+    ) public pure returns (uint256 netTokenValue) {
+        // Calculate NetTokenValue of Product
         uint256 balanceWorth = DSMath.wmul(_balance, _price);
         require(
             _cashPosition > balanceWorth,
             "The cash position needs to be bigger then the borrowed crypto is worth"
         );
-        nav = DSMath.sub(_cashPosition, balanceWorth);
-        return nav;
+        netTokenValue = DSMath.sub(_cashPosition, balanceWorth);
     }
 
     /**
      * @dev Returns the crypto amount to pay as lending fee
      * @param _lendingFee The yearly average lending fee for borrowed balance
-     * @param _balance The balnce (dept/borrow) in crypto
+     * @param _balance The balance (dept/borrow) in crypto
      * @param _days The days since the last fee calculation (Natural number)
      */
     function getLendingFeeInCrypto(
@@ -69,25 +69,23 @@ contract CompositionCalculator is Initializable {
 
     /**
      * Returns the change of balance with decimal at 18
-     * @param _nav The current nav of the product
-     * @param _balance The balnce (dept/borrow) in crypto
+     * @param _netTokenValue The current netTokenValue of the product
+     * @param _balance The balance (dept/borrow) in crypto
      * @param _price The momentary price of the crypto
      */
     function getNeededChangeInBalanceToRebalance(
-        uint256 _nav,
+        uint256 _netTokenValue,
         uint256 _balance,
         uint256 _price
-    ) public pure returns (uint256 changeInBalance, bool negative) {
+    ) public pure returns (uint256 changeInBalance, bool isNegative) {
         require(_price != 0, "Price cant be zero");
 
-        uint256 newAcountBalance = DSMath.wdiv(_nav, _price);
-
-        if (newAcountBalance >= _balance) {
-            changeInBalance = DSMath.sub(newAcountBalance, _balance);
-            negative = false;
+        uint256 newAccountBalance = DSMath.wdiv(_netTokenValue, _price);
+        isNegative = newAccountBalance < _balance;
+        if (!isNegative) {
+            changeInBalance = DSMath.sub(newAccountBalance, _balance);
         } else {
-            changeInBalance = DSMath.sub(_balance, newAcountBalance);
-            negative = true;
+            changeInBalance = DSMath.sub(_balance, newAccountBalance);
         }
     }
 
@@ -101,7 +99,7 @@ contract CompositionCalculator is Initializable {
         uint256 _a,
         uint256 _b,
         bool _isBNegative
-    ) internal pure returns (uint256 result) {
+    ) internal pure returns (uint256) {
         if (_isBNegative) {
             return _a.sub(_b);
         } else {
@@ -129,7 +127,7 @@ contract CompositionCalculator is Initializable {
         public
         pure
         returns (
-            uint256 endNav,
+            uint256 endNetTokenValue,
             uint256 endBalance,
             uint256 endCashPosition,
             uint256 feeInFiat,
@@ -138,7 +136,7 @@ contract CompositionCalculator is Initializable {
         )
     {
         require(_price != 0, "Price cant be zero");
-        // Update Calculation for NAV, Cash Position, Loan Positions, and Accrued Fees
+        // Update Calculation for NetTokenValue, Cash Position, Loan Positions, and Accrued Fees
 
         //remove fees
         uint256 feeInCrypto = getLendingFeeInCrypto(
@@ -158,7 +156,7 @@ contract CompositionCalculator is Initializable {
 
         //calculte change in balance (rebalance)
         endBalance = DSMath.wdiv(
-            getNAV(endCashPosition, _balance, _price),
+            getNetTokenValue(endCashPosition, _balance, _price),
             _price
         );
 
@@ -166,7 +164,7 @@ contract CompositionCalculator is Initializable {
             changeInBalance,
             isChangeInBalanceNeg
         ) = getNeededChangeInBalanceToRebalance(
-            getNAV(endCashPosition, _balance, _price),
+            getNetTokenValue(endCashPosition, _balance, _price),
             _balance,
             _price
         );
@@ -182,7 +180,11 @@ contract CompositionCalculator is Initializable {
             DSMath.wmul(changeInBalance, _price),
             isChangeInBalanceNeg
         );
-        endNav = getNAV(endCashPosition, endBalance, _price);
+        endNetTokenValue = getNetTokenValue(
+            endCashPosition,
+            endBalance,
+            _price
+        );
     }
 
     /**
@@ -203,7 +205,7 @@ contract CompositionCalculator is Initializable {
         public
         pure
         returns (
-            uint256 endNav,
+            uint256 endNetTokenValue,
             uint256 endBalance,
             uint256 endCashPosition,
             uint256 feeInFiat,
@@ -241,9 +243,21 @@ contract CompositionCalculator is Initializable {
         require(_spotPrice != 0, "Price cant be zero");
         require(_totalTokenSupply != 0, "Token supply cant be zero");
 
-        uint256 exNav = getNAV(_cashPosition, _balance, _spotPrice);
-        uint256 navPerToken = DSMath.wdiv(exNav, _totalTokenSupply);
-        tokenAmountCreated = DSMath.wdiv(_cash, navPerToken);
+        uint256 netTokenValue = getNetTokenValue(
+            _cashPosition,
+            _balance,
+            _spotPrice
+        );
+        uint256 netTokenValueTimesTokenAmount = DSMath.wmul(
+            netTokenValue,
+            _totalTokenSupply
+        );
+        require(
+            netTokenValueTimesTokenAmount != 0,
+            "netTokenValueTimesTokenAmount cant be zero"
+        );
+
+        tokenAmountCreated = DSMath.wdiv(_cash, netTokenValueTimesTokenAmount);
     }
 
     /**
@@ -264,15 +278,20 @@ contract CompositionCalculator is Initializable {
     ) public pure returns (uint256 cashFromTokenRedeem) {
         require(_spotPrice != 0, "Price cant be zero");
         require(_totalTokenSupply != 0, "Token supply cant be zero");
-        require(
-            _totalTokenSupply >= _tokenAmount,
-            "Token redeem cant be bigger then supply"
+
+        uint256 netTokenValue = getNetTokenValue(
+            _cashPosition,
+            _balance,
+            _spotPrice
         );
-
-        uint256 exNav = getNAV(_cashPosition, _balance, _spotPrice);
-        uint256 navPerToken = DSMath.wdiv(exNav, _totalTokenSupply);
-
-        cashFromTokenRedeem = DSMath.wmul(_tokenAmount, navPerToken);
+        uint256 netTokenValueTimesTokenAmount = DSMath.wmul(
+            netTokenValue,
+            _tokenAmount
+        );
+        cashFromTokenRedeem = DSMath.wdiv(
+            netTokenValueTimesTokenAmount,
+            _totalTokenSupply
+        );
     }
 
     /**
@@ -294,23 +313,27 @@ contract CompositionCalculator is Initializable {
     //*************************************************************************
 
     /**
-     * @dev Returns the current NAV
+     * @dev Returns the current NetTokenValue
      */
-    function getCurrentNAV() public view returns (uint256 nav) {
+    function getCurrentNetTokenValue()
+        public
+        view
+        returns (uint256 netTokenValue)
+    {
         uint256 totalTokenSupply = inverseToken.totalSupply();
         require(totalTokenSupply != 0, "Token supply cant be zero");
 
         uint256 cashPosition = DSMath.wmul(
             totalTokenSupply,
-            persistentStorage.getCashPositionPerToken()
+            persistentStorage.getCashPositionPerTokenUnit()
         );
         uint256 balance = DSMath.wmul(
             totalTokenSupply,
-            persistentStorage.getBalancePerToken()
+            persistentStorage.getBalancePerTokenUnit()
         );
         uint256 price = persistentStorage.getPrice();
 
-        nav = getNAV(cashPosition, balance, price);
+        netTokenValue = getNetTokenValue(cashPosition, balance, price);
     }
 
     /**
@@ -336,22 +359,11 @@ contract CompositionCalculator is Initializable {
         uint256 _cash,
         uint256 _spotPrice
     ) public view returns (uint256 tokenAmountCreated) {
-        uint256 totalTokenSupply = inverseToken.totalSupply();
-        require(totalTokenSupply != 0, "Token supply cant be zero");
-        uint256 cashPosition = DSMath.wmul(
-            totalTokenSupply,
-            persistentStorage.getCashPositionPerToken()
-        );
-
         uint256 cashAfterFee = removeCurrentMintingFeeFromCash(_cash);
-        uint256 balance = DSMath.wmul(
-            totalTokenSupply,
-            persistentStorage.getBalancePerToken()
-        );
         tokenAmountCreated = getTokenAmountCreatedByCash(
-            cashPosition,
-            balance,
-            totalTokenSupply,
+            persistentStorage.getCashPositionPerTokenUnit(),
+            persistentStorage.getBalancePerTokenUnit(),
+            1 ether,
             cashAfterFee,
             _spotPrice
         );
@@ -370,22 +382,33 @@ contract CompositionCalculator is Initializable {
         uint256 totalTokenSupply = inverseToken.totalSupply();
         require(totalTokenSupply != 0, "Token supply cant be zero");
 
-        uint256 cashPosition = DSMath.wmul(
-            totalTokenSupply,
-            persistentStorage.getCashPositionPerToken()
+        uint256 lendingFee = persistentStorage.getLendingFee();
+        uint256 daysSinceLastRebalance = getDaysSinceLastRebalance() + 1;
+
+        uint256 cryptoForLendingFee = getLendingFeeInCrypto(
+            lendingFee,
+            DSMath.wmul(
+                _tokenAmount,
+                persistentStorage.getBalancePerTokenUnit()
+            ),
+            daysSinceLastRebalance
         );
-        uint256 balance = DSMath.wmul(
-            totalTokenSupply,
-            persistentStorage.getBalancePerToken()
+        uint256 fiatForLendingFee = DSMath.wmul(
+            cryptoForLendingFee,
+            _spotPrice
         );
+
         uint256 cashFromToken = getCashAmountCreatedByToken(
-            cashPosition,
-            balance,
-            totalTokenSupply,
+            persistentStorage.getCashPositionPerTokenUnit(),
+            persistentStorage.getBalancePerTokenUnit(),
+            1 ether,
             _tokenAmount,
             _spotPrice
         );
-        cashFromTokenRedeem = removeCurrentMintingFeeFromCash(cashFromToken);
+
+        cashFromTokenRedeem = removeCurrentMintingFeeFromCash(
+            DSMath.sub(cashFromToken, fiatForLendingFee)
+        );
     }
 
     function getDaysSinceLastRebalance()
@@ -399,7 +422,7 @@ contract CompositionCalculator is Initializable {
         uint256 day = lastRebalanceDay - year.mul(10000) - month.mul(100);
 
         uint256 startDate = DateTimeLibrary.timestampFromDate(year, month, day);
-        daysSinceLastRebalance = (now - startDate) / 60 / 60 / 24;
+        daysSinceLastRebalance = (block.timestamp - startDate) / 60 / 60 / 24;
     }
 
     /**
@@ -414,7 +437,7 @@ contract CompositionCalculator is Initializable {
         uint256 lendingFee = persistentStorage.getLendingFee();
         uint256 balance = DSMath.wmul(
             totalTokenSupply,
-            persistentStorage.getBalancePerToken()
+            persistentStorage.getBalancePerTokenUnit()
         );
         uint256 daysSinceLastRebalance = getDaysSinceLastRebalance();
 
@@ -434,12 +457,13 @@ contract CompositionCalculator is Initializable {
         returns (uint256 neededChangeInBalance, bool isNegative)
     {
         uint256 totalTokenSupply = inverseToken.totalSupply();
-        uint256 nav = getCurrentNAV();
+        uint256 netTokenValue = getCurrentNetTokenValue();
         uint256 balance = DSMath.wmul(
             totalTokenSupply,
-            persistentStorage.getBalancePerToken()
+            persistentStorage.getBalancePerTokenUnit()
         );
-        return getNeededChangeInBalanceToRebalance(nav, balance, _price);
+        return
+            getNeededChangeInBalanceToRebalance(netTokenValue, balance, _price);
     }
 
     /**
@@ -449,9 +473,8 @@ contract CompositionCalculator is Initializable {
         uint256 totalTokenSupply = inverseToken.totalSupply();
         totalBalance = DSMath.wmul(
             totalTokenSupply,
-            persistentStorage.getBalancePerToken()
+            persistentStorage.getBalancePerTokenUnit()
         );
-        return totalBalance;
     }
 
     /**
@@ -462,7 +485,7 @@ contract CompositionCalculator is Initializable {
         public
         view
         returns (
-            uint256 endNav,
+            uint256 endNetTokenValue,
             uint256 endBalance,
             uint256 endCashPosition,
             uint256 feeInFiat,
@@ -474,11 +497,11 @@ contract CompositionCalculator is Initializable {
         uint256 totalTokenSupply = inverseToken.totalSupply();
         uint256 balance = DSMath.wmul(
             totalTokenSupply,
-            persistentStorage.getBalancePerToken()
+            persistentStorage.getBalancePerTokenUnit()
         );
         uint256 cashPosition = DSMath.wmul(
             totalTokenSupply,
-            persistentStorage.getCashPositionPerToken()
+            persistentStorage.getCashPositionPerTokenUnit()
         );
         uint256 daysSinceLastRebalance = getDaysSinceLastRebalance();
         uint256 minRebalanceAmount = persistentStorage.minRebalanceAmount();
@@ -505,9 +528,10 @@ contract CompositionCalculator is Initializable {
         uint256 totalTokenSupply = inverseToken.totalSupply();
         totalCashPosition = DSMath.wmul(
             totalTokenSupply,
-            persistentStorage.getCashPositionPerToken()
+            persistentStorage.getCashPositionPerTokenUnit()
         );
     }
+
     function wmul(uint256 x, uint256 y) external pure returns (uint256 z) {
         z = DSMath.wmul(x, y);
     }
@@ -515,5 +539,4 @@ contract CompositionCalculator is Initializable {
     function wdiv(uint256 x, uint256 y) external pure returns (uint256 z) {
         z = DSMath.wdiv(x, y);
     }
-
 }
