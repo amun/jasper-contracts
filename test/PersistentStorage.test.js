@@ -287,13 +287,13 @@ describe("PersistentStorage", function() {
     it("sets managementFee", async function() {
       await this.contract.setManagementFee(newManagementFee, { from: owner });
 
-      const managementFee = await this.contract.getManagementFee();
+      const managementFee = await this.contract.managementFee();
       expect(managementFee).to.be.bignumber.equal(newManagementFee);
     });
   });
-  describe("#getManagementFee", function() {
+  describe("#managementFee", function() {
     it("gets price", async function() {
-      const resultManagementFee = await this.contract.getManagementFee({
+      const resultManagementFee = await this.contract.managementFee({
         from: notListed
       });
       expect(resultManagementFee).to.be.bignumber.equal(managementFee);

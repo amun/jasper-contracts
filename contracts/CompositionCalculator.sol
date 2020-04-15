@@ -115,6 +115,7 @@ contract CompositionCalculator is Initializable {
      * @param _lendingFee The yearly average lending fee for borrowed balance
      * @param _days The days since the last fee calculation  (Natural number)
      * @param _minRebalanceAmount The minimum amount to rebalance
+     * @param _changeInBalancePrecision The change in balance precision
      */
     function calculatePCF(
         uint256 _cashPosition,
@@ -122,7 +123,8 @@ contract CompositionCalculator is Initializable {
         uint256 _price,
         uint256 _lendingFee,
         uint256 _days,
-        uint256 _minRebalanceAmount
+        uint256 _minRebalanceAmount,
+        uint256 _changeInBalancePrecision
     )
         public
         pure
@@ -168,12 +170,16 @@ contract CompositionCalculator is Initializable {
             _balance,
             _price
         );
-
+        changeInBalance = floor(changeInBalance, _changeInBalancePrecision);
         if (changeInBalance < _minRebalanceAmount) {
             changeInBalance = 0;
             endBalance = _balance;
         }
-
+        endBalance = addOrSub(
+            _balance, //cashPositionWithoutFee
+            changeInBalance,
+            isChangeInBalanceNeg
+        );
         //result
         endCashPosition = addOrSub(
             endCashPosition, //cashPositionWithoutFee
@@ -193,6 +199,7 @@ contract CompositionCalculator is Initializable {
      * @param _price The momentary price of the crypto
      * @param _lendingFee The yearly average lending fee for borrowed balance
      * @param _days The days since the last fee calculation (Natural number)
+     * @param _changeInBalancePrecision The change in balance precision
      */
     function calculatePCFWithoutMin(
         //getDeliverables
@@ -200,7 +207,8 @@ contract CompositionCalculator is Initializable {
         uint256 _balance,
         uint256 _price,
         uint256 _lendingFee,
-        uint256 _days
+        uint256 _days,
+        uint256 _changeInBalancePrecision
     )
         public
         pure
@@ -220,7 +228,8 @@ contract CompositionCalculator is Initializable {
                 _price,
                 _lendingFee,
                 _days,
-                0
+                0,
+                _changeInBalancePrecision
             );
     }
 
@@ -242,22 +251,15 @@ contract CompositionCalculator is Initializable {
     ) public pure returns (uint256 tokenAmountCreated) {
         require(_spotPrice != 0, "Price cant be zero");
         require(_totalTokenSupply != 0, "Token supply cant be zero");
-
         uint256 netTokenValue = getNetTokenValue(
             _cashPosition,
             _balance,
             _spotPrice
         );
-        uint256 netTokenValueTimesTokenAmount = DSMath.wmul(
-            netTokenValue,
-            _totalTokenSupply
-        );
-        require(
-            netTokenValueTimesTokenAmount != 0,
-            "netTokenValueTimesTokenAmount cant be zero"
-        );
 
-        tokenAmountCreated = DSMath.wdiv(_cash, netTokenValueTimesTokenAmount);
+        uint256 cashTimesTokenAmount = DSMath.wmul(_cash, _totalTokenSupply);
+
+        tokenAmountCreated = DSMath.wdiv(cashTimesTokenAmount, netTokenValue);
     }
 
     /**
@@ -379,9 +381,6 @@ contract CompositionCalculator is Initializable {
         uint256 _tokenAmount,
         uint256 _spotPrice
     ) public view returns (uint256 cashFromTokenRedeem) {
-        uint256 totalTokenSupply = inverseToken.totalSupply();
-        require(totalTokenSupply != 0, "Token supply cant be zero");
-
         uint256 lendingFee = persistentStorage.getLendingFee();
         uint256 daysSinceLastRebalance = getDaysSinceLastRebalance() + 1;
 
@@ -505,7 +504,6 @@ contract CompositionCalculator is Initializable {
         );
         uint256 daysSinceLastRebalance = getDaysSinceLastRebalance();
         uint256 minRebalanceAmount = persistentStorage.minRebalanceAmount();
-
         return
             calculatePCF(
                 cashPosition,
@@ -513,7 +511,8 @@ contract CompositionCalculator is Initializable {
                 _price,
                 _lendingFee,
                 daysSinceLastRebalance,
-                minRebalanceAmount
+                minRebalanceAmount,
+                persistentStorage.balancePrecision()
             );
     }
 
@@ -538,5 +537,13 @@ contract CompositionCalculator is Initializable {
 
     function wdiv(uint256 x, uint256 y) external pure returns (uint256 z) {
         z = DSMath.wdiv(x, y);
+    }
+
+    function floorBalance(uint256 a) public view returns (uint256) {
+        return floor(a, persistentStorage.balancePrecision());
+    }
+
+    function floor(uint256 a, uint256 precision) public pure returns (uint256) {
+        return (a / 10**(precision)) * 10**(precision);
     }
 }

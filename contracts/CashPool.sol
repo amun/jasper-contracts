@@ -33,6 +33,11 @@ contract CashPool is Ownable {
                 _percentageOfFundsForColdStorage[1] != 0,
             "params variables cannot be empty but _percentageOfFundsForColdStorage[0]"
         );
+        require(
+            _percentageOfFundsForColdStorage[0] <=
+                _percentageOfFundsForColdStorage[1],
+            "cannot set more than 100% for coldstorage"
+        );
         initialize(ownerAddress);
         kycVerifier = KYCVerifier(_kycVerifier);
         persistentStorage = PersistentStorage(_persistentStorage);

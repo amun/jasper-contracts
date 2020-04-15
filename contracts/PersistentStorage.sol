@@ -28,7 +28,8 @@ contract PersistentStorage is Ownable {
 
     uint256 public lastActivityDay;
     uint256 public minRebalanceAmount;
-    uint256 private managementFee;
+    uint256 public managementFee;
+    uint8 public balancePrecision;
 
     mapping(uint256 => Accounting[]) private accounting;
 
@@ -58,6 +59,7 @@ contract PersistentStorage is Ownable {
         mintingFee[50000 ether] = 3 ether / 1000; //0.3%
         mintingFee[100000 ether] = 2 ether / 1000; //0.2%
         mintingFee[~uint256(0)] = 1 ether / 1000; //0.1% all values higher
+        balancePrecision = 10;
     }
 
     function setTokenSwapManager(address _tokenSwapManager) public onlyOwner {
@@ -348,11 +350,6 @@ contract PersistentStorage is Ownable {
                 .lendingFee;
     }
 
-    // @dev Returns lending fee
-    function getManagementFee() public view returns (uint256 lendingRate) {
-        return managementFee;
-    }
-
     // @dev Sets last minting fee
     function setLastMintingFee(uint256 _mintingFee) public onlyOwner {
         mintingFee[~uint256(0)] = _mintingFee;
@@ -421,5 +418,10 @@ contract PersistentStorage is Ownable {
             }
         }
         return mintingFee[~uint256(0)];
+    }
+
+    // @dev Sets last balance precision
+    function setLastPrecision(uint8 _balancePrecision) public onlyOwner {
+        balancePrecision = _balancePrecision;
     }
 }

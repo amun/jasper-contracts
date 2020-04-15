@@ -459,8 +459,10 @@ describe("TokenSwapManager", function() {
         price,
         lendingFee,
         1,
-        getEth(0)
+        getEth(0),
+        10
       );
+
       const endBalance = result[1];
       const endCashPosition = result[2];
 
@@ -504,7 +506,8 @@ describe("TokenSwapManager", function() {
         price,
         lendingFee,
         1,
-        getEth(0)
+        getEth(0),
+        10
       );
       const endBalance = result[1];
       const endCashPosition = result[2];
@@ -551,7 +554,8 @@ describe("TokenSwapManager", function() {
         price,
         lendingFee,
         1,
-        getEth(0)
+        getEth(0),
+        10
       );
       const endBalance = result[1];
       const endCashPosition = result[2];
@@ -669,7 +673,8 @@ describe("TokenSwapManager", function() {
         price,
         0,
         1,
-        getEth(0)
+        getEth(0),
+        10
       );
       const endBalance = result[1];
       const endCashPosition = result[2];
@@ -715,7 +720,8 @@ describe("TokenSwapManager", function() {
         price,
         0,
         1,
-        getEth(0)
+        getEth(0),
+        10
       );
       const endBalance = result[1];
       const endCashPosition = result[2];

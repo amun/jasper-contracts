@@ -206,7 +206,7 @@ contract TokenSwapManager is Initializable, Ownable {
     function settleDelayedFunds(
         uint256 tokensToRedeem,
         address whitelistedAddress
-    ) public onlyOwnerOrBridge {
+    ) public onlyOwnerOrBridge notPausedOrShutdown {
         require(
             kycVerifier.isAddressWhitelisted(whitelistedAddress),
             "only whitelisted may redeem funds"

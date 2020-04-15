@@ -35,6 +35,7 @@ function resetContracts() {
     # deploy all contracts
     echo
     echo "### Compiling and deploying contracts ###"
+    npx oz push -n development
 
     echo
     echo "### Compiling and deploying persistentStorage ###"
@@ -86,6 +87,10 @@ function resetContracts() {
 
 }
 
+function setIsDappMode() {
+        printf '{ "isDappMode":"%s" }\n' "$isDappMode" > /tmp/isDappMode.json
+}
+
 function flattenContracts() {
     echo
     echo "### Flatten contracts into /flat ###"
@@ -108,7 +113,7 @@ function mintInverseTokens() {
     echo
     echo "Mint initial inverse Tokens, KYC whitelist ownerAddress and set Token SwapManager Address in PersistentStorage"
     echo
-    node './scripts/mintInverseTokens.js' $isDappMode
+    node '../App/backend/scripts/mintInverseTokens.js' $isDappMode
 }
 
 function contractsInit() {
@@ -138,6 +143,7 @@ function createLendingRates() {
 
 # Main
 resetContracts $1
+setIsDappMode
 flattenContracts
 mintInverseTokens
 mintUSDC

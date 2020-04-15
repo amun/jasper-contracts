@@ -164,6 +164,7 @@ describe("CompositionCalculator", function() {
       const lendingFee = getEth(2.5);
       const daysSinceLastRebalance = 1;
       const minRebalanceAmount = getEth(1);
+      const precision = '0';
 
       const result = await this.contract.calculatePCF(
         cashPosition,
@@ -171,8 +172,10 @@ describe("CompositionCalculator", function() {
         price,
         lendingFee,
         daysSinceLastRebalance,
-        minRebalanceAmount
+        minRebalanceAmount,
+        precision
       );
+   
       const [
         endNetTokenValue,
         endBalance,
@@ -194,6 +197,7 @@ describe("CompositionCalculator", function() {
       const lendingFee = getEth(2.5);
       const daysSinceLastRebalance = 1;
       const minRebalanceAmount = getEth(1);
+      const precision = '0';
 
       const result = await this.contract.calculatePCF(
         cashPosition,
@@ -201,7 +205,8 @@ describe("CompositionCalculator", function() {
         price,
         lendingFee,
         daysSinceLastRebalance,
-        minRebalanceAmount
+        minRebalanceAmount,
+        precision
       );
       const [
         endNetTokenValue,
@@ -211,7 +216,7 @@ describe("CompositionCalculator", function() {
         changeInBalance,
         isChangeInBalanceNeg
       ] = Object.values(result);
-
+  
       expect(getNumberWithDecimal(changeInBalance)).to.be.equal(
         "22.215372907153729022"
       );
@@ -223,14 +228,14 @@ describe("CompositionCalculator", function() {
       expect(new BigNumber(endCashPosition).gt(cashPosition)).to.be.true;
       expect(isChangeInBalanceNeg).to.be.false;
     });
-
-    it("does change positive when increased price", async function() {
+    it("does floor changeInBalance to 8 decimals", async function() {
       const balance = getEth(100);
       const cashPosition = getEth(200000);
-      const price = getEth(1100);
+      const price = getEth(900);
       const lendingFee = getEth(2.5);
       const daysSinceLastRebalance = 1;
       const minRebalanceAmount = getEth(1);
+      const precision = '10';
 
       const result = await this.contract.calculatePCF(
         cashPosition,
@@ -238,7 +243,46 @@ describe("CompositionCalculator", function() {
         price,
         lendingFee,
         daysSinceLastRebalance,
-        minRebalanceAmount
+        minRebalanceAmount,
+        precision
+      );
+      const [
+        endNetTokenValue,
+        endBalance,
+        endCashPosition,
+        feeInFiat,
+        changeInBalance,
+        isChangeInBalanceNeg
+      ] = Object.values(result);
+
+      expect(getNumberWithDecimal(changeInBalance)).to.be.equal(
+        "22.215372900000000000"
+      );
+      expect(getNumberWithDecimal(feeInFiat)).to.be.equal(
+        "6.164383561643880000"
+      );
+      expect(new BigNumber(getNumberWithDecimal(endNetTokenValue)).gt(100000)).to.be.true;
+      expect(new BigNumber(endBalance).gt(balance)).to.be.true;
+      expect(new BigNumber(endCashPosition).gt(cashPosition)).to.be.true;
+      expect(isChangeInBalanceNeg).to.be.false;
+    });
+    it("does change positive when increased price", async function() {
+      const balance = getEth(100);
+      const cashPosition = getEth(200000);
+      const price = getEth(1100);
+      const lendingFee = getEth(2.5);
+      const daysSinceLastRebalance = 1;
+      const minRebalanceAmount = getEth(1);
+      const precision = '0';
+
+      const result = await this.contract.calculatePCF(
+        cashPosition,
+        balance,
+        price,
+        lendingFee,
+        daysSinceLastRebalance,
+        minRebalanceAmount,
+        precision
       );
       const [
         endNetTokenValue,
