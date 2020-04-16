@@ -346,7 +346,7 @@ describe("TokenSwapManager", function() {
 
     it("executes redemption without settlement", async function() {
       expectEvent(this.receipt, "SuccessfulOrder", {
-        orderType: "REDEEM NO SETTLEMENT",
+        orderType: "REDEEM_NO_SETTLEMENT",
         whitelistedAddress: user,
         tokensGiven: tokensGiven.toString(),
         tokensRecieved: tokensRecieved.toString()
