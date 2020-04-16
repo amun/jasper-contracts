@@ -218,8 +218,9 @@ contract TokenSwapManager is Initializable, Ownable {
             "not enough funds in the hot wallet"
         );
 
-        uint256 tokensOutstanding = persistentStorage
-            .getDelayedRedemptionsByUser(whitelistedAddress);
+        uint256 tokensOutstanding = persistentStorage.delayedRedemptionsByUser(
+            whitelistedAddress
+        );
         uint256 tokensRemaining = DSMath.sub(tokensOutstanding, tokensToRedeem);
 
         persistentStorage.setDelayedRedemptionsByUser(
@@ -254,14 +255,14 @@ contract TokenSwapManager is Initializable, Ownable {
             );
         } else {
             uint256 tokensOutstanding = persistentStorage
-                .getDelayedRedemptionsByUser(whitelistedAddress);
+                .delayedRedemptionsByUser(whitelistedAddress);
             tokensOutstanding = DSMath.add(tokensOutstanding, tokensToRedeem);
             persistentStorage.setDelayedRedemptionsByUser(
                 tokensOutstanding,
                 whitelistedAddress
             );
             writeOrderResponse(
-                "REDEEM NO SETTLEMENT",
+                "REDEEM_NO_SETTLEMENT",
                 whitelistedAddress,
                 tokensGiven,
                 tokensToRedeem

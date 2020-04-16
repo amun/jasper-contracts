@@ -98,14 +98,6 @@ contract PersistentStorage is Ownable {
         delayedRedemptionsByUser[whitelistedAddress] = amountToRedeem;
     }
 
-    function getDelayedRedemptionsByUser(address whitelistedAddress)
-        public
-        view
-        returns (uint256)
-    {
-        return delayedRedemptionsByUser[whitelistedAddress];
-    }
-
     /*
      * Saves order in mapping (address => Order[]) orderByUser
      * overwrite == false, append to Order[]
