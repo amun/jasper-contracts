@@ -2,7 +2,7 @@ const { accounts, contract } = require("@openzeppelin/test-environment");
 const { expect } = require("chai");
 const BigNumber = require("bignumber.js");
 
-const { time, expectRevert, ether } = require("@openzeppelin/test-helpers");
+const { time, expectRevert, ether, BN } = require("@openzeppelin/test-helpers");
 
 const InverseToken = contract.fromArtifact("InverseToken");
 const CompositionCalculator = contract.fromArtifact("CompositionCalculator");
@@ -25,8 +25,25 @@ describe("CompositionCalculator", function() {
     this.storage = await PersistentStorage.new({ from: owner });
     const managementFee = ether("7");
     const minRebalanceAmount = ether("1");
-    await this.storage.initialize(owner, managementFee, minRebalanceAmount);
-
+    const lastMintingFee = ether("0.001");
+    const balancePrecision = 12;
+    const minimumMintingFee = ether("5");
+    const minimumTrade = ether("50");
+    await this.storage.initialize(
+      owner,
+      managementFee,
+      minRebalanceAmount,
+      balancePrecision,
+      lastMintingFee,
+      minimumMintingFee,
+      minimumTrade
+    );
+    await this.storage.addMintingFeeBracket(ether("50000"), ether("0.003"), {
+      from: owner
+    }); //0.3%
+    await this.storage.addMintingFeeBracket(ether("100000"), ether("0.002"), {
+      from: owner
+    }); //0
     this.token = await InverseToken.new({ from: owner });
     await this.token.initialize(
       "InverseToken",
@@ -47,7 +64,11 @@ describe("CompositionCalculator", function() {
       const price = getEth(1000);
       const expectedNetTokenValue = getEth(100000);
 
-      const netTokenValue = await this.contract.getNetTokenValue(cashPosition, balance, price);
+      const netTokenValue = await this.contract.getNetTokenValue(
+        cashPosition,
+        balance,
+        price
+      );
 
       expect(getNumberWithDecimal(expectedNetTokenValue)).to.be.equal(
         getNumberWithDecimal(netTokenValue)
@@ -152,7 +173,8 @@ describe("CompositionCalculator", function() {
       ] = Object.values(result);
 
       expect(changeInBalance.toNumber()).to.be.equal(0);
-      expect(new BigNumber(getNumberWithDecimal(endNetTokenValue)).eq(100000)).to.be.true;
+      expect(new BigNumber(getNumberWithDecimal(endNetTokenValue)).eq(100000))
+        .to.be.true;
     });
   });
 
@@ -164,7 +186,7 @@ describe("CompositionCalculator", function() {
       const lendingFee = getEth(2.5);
       const daysSinceLastRebalance = 1;
       const minRebalanceAmount = getEth(1);
-      const precision = '0';
+      const precision = "0";
 
       const result = await this.contract.calculatePCF(
         cashPosition,
@@ -175,7 +197,7 @@ describe("CompositionCalculator", function() {
         minRebalanceAmount,
         precision
       );
-   
+
       const [
         endNetTokenValue,
         endBalance,
@@ -188,7 +210,8 @@ describe("CompositionCalculator", function() {
 
       expect(changeInBalance.toNumber()).to.be.equal(0);
       //netTokenValue should get smaller because of fee
-      expect(new BigNumber(getNumberWithDecimal(endNetTokenValue)).lt(100000)).to.be.true;
+      expect(new BigNumber(getNumberWithDecimal(endNetTokenValue)).lt(100000))
+        .to.be.true;
     });
     it("does change positive when smaller price", async function() {
       const balance = getEth(100);
@@ -197,7 +220,7 @@ describe("CompositionCalculator", function() {
       const lendingFee = getEth(2.5);
       const daysSinceLastRebalance = 1;
       const minRebalanceAmount = getEth(1);
-      const precision = '0';
+      const precision = "0";
 
       const result = await this.contract.calculatePCF(
         cashPosition,
@@ -216,14 +239,15 @@ describe("CompositionCalculator", function() {
         changeInBalance,
         isChangeInBalanceNeg
       ] = Object.values(result);
-  
+
       expect(getNumberWithDecimal(changeInBalance)).to.be.equal(
         "22.215372907153729022"
       );
       expect(getNumberWithDecimal(feeInFiat)).to.be.equal(
         "6.164383561643880000"
       );
-      expect(new BigNumber(getNumberWithDecimal(endNetTokenValue)).gt(100000)).to.be.true;
+      expect(new BigNumber(getNumberWithDecimal(endNetTokenValue)).gt(100000))
+        .to.be.true;
       expect(new BigNumber(endBalance).gt(balance)).to.be.true;
       expect(new BigNumber(endCashPosition).gt(cashPosition)).to.be.true;
       expect(isChangeInBalanceNeg).to.be.false;
@@ -235,7 +259,7 @@ describe("CompositionCalculator", function() {
       const lendingFee = getEth(2.5);
       const daysSinceLastRebalance = 1;
       const minRebalanceAmount = getEth(1);
-      const precision = '10';
+      const precision = "10";
 
       const result = await this.contract.calculatePCF(
         cashPosition,
@@ -261,7 +285,8 @@ describe("CompositionCalculator", function() {
       expect(getNumberWithDecimal(feeInFiat)).to.be.equal(
         "6.164383561643880000"
       );
-      expect(new BigNumber(getNumberWithDecimal(endNetTokenValue)).gt(100000)).to.be.true;
+      expect(new BigNumber(getNumberWithDecimal(endNetTokenValue)).gt(100000))
+        .to.be.true;
       expect(new BigNumber(endBalance).gt(balance)).to.be.true;
       expect(new BigNumber(endCashPosition).gt(cashPosition)).to.be.true;
       expect(isChangeInBalanceNeg).to.be.false;
@@ -273,7 +298,7 @@ describe("CompositionCalculator", function() {
       const lendingFee = getEth(2.5);
       const daysSinceLastRebalance = 1;
       const minRebalanceAmount = getEth(1);
-      const precision = '0';
+      const precision = "0";
 
       const result = await this.contract.calculatePCF(
         cashPosition,
@@ -299,15 +324,16 @@ describe("CompositionCalculator", function() {
       expect(getNumberWithDecimal(feeInFiat)).to.be.equal(
         "7.534246575342520000"
       );
-      expect(new BigNumber(getNumberWithDecimal(endNetTokenValue)).lt(100000)).to.be.true;
+      expect(new BigNumber(getNumberWithDecimal(endNetTokenValue)).lt(100000))
+        .to.be.true;
       expect(new BigNumber(endBalance).lt(balance)).to.be.true;
       expect(new BigNumber(endCashPosition).lt(cashPosition)).to.be.true;
       expect(isChangeInBalanceNeg).to.be.true;
     });
   });
 
-  describe("#getTokenAmountCreatedByCash", function () {
-    it("does give correct token amount for unbalanced product with lower spot price.", async function () {
+  describe("#getTokenAmountCreatedByCash", function() {
+    it("does give correct token amount for unbalanced product with lower spot price.", async function() {
       //2000+1*900 = (1200 + 800)-1*800
       const balance = getEth(1);
       const cashPosition = getEth(2000);
@@ -316,12 +342,19 @@ describe("CompositionCalculator", function() {
       const cash = getEth(1200);
       const spot = getEth(800);
 
-
-      const tokenCreated = await this.contract.getTokenAmountCreatedByCash(cashPosition, balance, totalTokenSupply, cash, spot);
-      expect(getNumberWithDecimal(tokenCreated)).to.be.equal(getNumberWithDecimal(totalTokenSupply));
+      const tokenCreated = await this.contract.getTokenAmountCreatedByCash(
+        cashPosition,
+        balance,
+        totalTokenSupply,
+        cash,
+        spot
+      );
+      expect(getNumberWithDecimal(tokenCreated)).to.be.equal(
+        getNumberWithDecimal(totalTokenSupply)
+      );
     });
 
-    it("does give correct token amount for rebalanced product with lower spot price.", async function () {
+    it("does give correct token amount for rebalanced product with lower spot price.", async function() {
       //2000 - 1 * 1000 = (1100 + 900) - 1 * 1000
       const balance = getEth(1);
       const cashPosition = getEth(2000);
@@ -330,12 +363,19 @@ describe("CompositionCalculator", function() {
       const cash = getEth(1100);
       const spot = getEth(900);
 
-
-      const tokenCreated = await this.contract.getTokenAmountCreatedByCash(cashPosition, balance, totalTokenSupply, cash, spot);
-      expect(getNumberWithDecimal(tokenCreated)).to.be.equal(getNumberWithDecimal(totalTokenSupply));
+      const tokenCreated = await this.contract.getTokenAmountCreatedByCash(
+        cashPosition,
+        balance,
+        totalTokenSupply,
+        cash,
+        spot
+      );
+      expect(getNumberWithDecimal(tokenCreated)).to.be.equal(
+        getNumberWithDecimal(totalTokenSupply)
+      );
     });
 
-    it("does give correct token amount for rebalanced product with higher spot price.", async function () {
+    it("does give correct token amount for rebalanced product with higher spot price.", async function() {
       //2000 - 1 * 1000 = (900 + 1100) - 1 * 1000
       const balance = getEth(1);
       const cashPosition = getEth(2000);
@@ -344,11 +384,18 @@ describe("CompositionCalculator", function() {
       const cash = getEth(900);
       const spot = getEth(1100);
 
-
-      const tokenCreated = await this.contract.getTokenAmountCreatedByCash(cashPosition, balance, totalTokenSupply, cash, spot);
-      expect(getNumberWithDecimal(tokenCreated)).to.be.equal(getNumberWithDecimal(totalTokenSupply));
+      const tokenCreated = await this.contract.getTokenAmountCreatedByCash(
+        cashPosition,
+        balance,
+        totalTokenSupply,
+        cash,
+        spot
+      );
+      expect(getNumberWithDecimal(tokenCreated)).to.be.equal(
+        getNumberWithDecimal(totalTokenSupply)
+      );
     });
-    it("does give correct token amount for unbalanced product with higher spot price.", async function () {
+    it("does give correct token amount for unbalanced product with higher spot price.", async function() {
       //2000+1*900 = (900 + 1100)-1*900
       const balance = getEth(1);
       const cashPosition = getEth(2000);
@@ -357,11 +404,19 @@ describe("CompositionCalculator", function() {
       const cash = getEth(900);
       const spot = getEth(1100);
 
-      const tokenCreated = await this.contract.getTokenAmountCreatedByCash(cashPosition, balance, totalTokenSupply, cash, spot);
-      expect(getNumberWithDecimal(tokenCreated)).to.be.equal(getNumberWithDecimal(totalTokenSupply));
+      const tokenCreated = await this.contract.getTokenAmountCreatedByCash(
+        cashPosition,
+        balance,
+        totalTokenSupply,
+        cash,
+        spot
+      );
+      expect(getNumberWithDecimal(tokenCreated)).to.be.equal(
+        getNumberWithDecimal(totalTokenSupply)
+      );
     });
 
-    it("does give correct token amount for unbalanced product with same spot price.", async function () {
+    it("does give correct token amount for unbalanced product with same spot price.", async function() {
       //2000+1*900 = (1100 + 900)-1*900
       const balance = getEth(1);
       const cashPosition = getEth(2000);
@@ -370,12 +425,19 @@ describe("CompositionCalculator", function() {
       const cash = getEth(2200);
       const spot = getEth(900);
 
-
-      const tokenCreated = await this.contract.getTokenAmountCreatedByCash(cashPosition, balance, totalTokenSupply, cash, spot);
-      expect(getNumberWithDecimal(tokenCreated)).to.be.equal(getNumberWithDecimal(getEth(2)));
+      const tokenCreated = await this.contract.getTokenAmountCreatedByCash(
+        cashPosition,
+        balance,
+        totalTokenSupply,
+        cash,
+        spot
+      );
+      expect(getNumberWithDecimal(tokenCreated)).to.be.equal(
+        getNumberWithDecimal(getEth(2))
+      );
     });
 
-    it("does give correct token amount for rebalanced product with same spot price.", async function () {
+    it("does give correct token amount for rebalanced product with same spot price.", async function() {
       //2000+1*1000 = (1000 + 1000)-1*1000
       const balance = getEth(1);
       const cashPosition = getEth(2000);
@@ -384,15 +446,21 @@ describe("CompositionCalculator", function() {
       const cash = getEth(2000);
       const spot = getEth(1000);
 
-
-      const tokenCreated = await this.contract.getTokenAmountCreatedByCash(cashPosition, balance, totalTokenSupply, cash, spot);
-      expect(getNumberWithDecimal(tokenCreated)).to.be.equal(getNumberWithDecimal(getEth(2)));
+      const tokenCreated = await this.contract.getTokenAmountCreatedByCash(
+        cashPosition,
+        balance,
+        totalTokenSupply,
+        cash,
+        spot
+      );
+      expect(getNumberWithDecimal(tokenCreated)).to.be.equal(
+        getNumberWithDecimal(getEth(2))
+      );
     });
   });
 
-
-  describe("#getCashAmountCreatedByToken", function () {
-    it("does give correct cash payed for lower spot price.", async function () {
+  describe("#getCashAmountCreatedByToken", function() {
+    it("does give correct cash payed for lower spot price.", async function() {
       //2000-1*800 = 1200
       const balance = getEth(1);
       const cashPosition = getEth(2000);
@@ -401,11 +469,19 @@ describe("CompositionCalculator", function() {
       const tokenAmount = getEth(1);
       const spot = getEth(800);
 
-      const cashFromTokenRedeem = await this.contract.getCashAmountCreatedByToken(cashPosition, balance, totalTokenSupply, tokenAmount, spot);
+      const cashFromTokenRedeem = await this.contract.getCashAmountCreatedByToken(
+        cashPosition,
+        balance,
+        totalTokenSupply,
+        tokenAmount,
+        spot
+      );
 
-      expect(getNumberWithDecimal(cashFromTokenRedeem)).to.be.equal(getNumberWithDecimal(cashPosition - spot));
+      expect(getNumberWithDecimal(cashFromTokenRedeem)).to.be.equal(
+        getNumberWithDecimal(cashPosition - spot)
+      );
     });
-    it("does give correct cash payed for higher spot price.", async function () {
+    it("does give correct cash payed for higher spot price.", async function() {
       //2000-1*1200 = 800
       const balance = getEth(1);
       const cashPosition = getEth(2000);
@@ -414,12 +490,20 @@ describe("CompositionCalculator", function() {
       const tokenAmount = getEth(1);
       const spot = getEth(1200);
 
-      const cashFromTokenRedeem = await this.contract.getCashAmountCreatedByToken(cashPosition, balance, totalTokenSupply, tokenAmount, spot);
+      const cashFromTokenRedeem = await this.contract.getCashAmountCreatedByToken(
+        cashPosition,
+        balance,
+        totalTokenSupply,
+        tokenAmount,
+        spot
+      );
 
-      expect(getNumberWithDecimal(cashFromTokenRedeem)).to.be.equal(getNumberWithDecimal(cashPosition - spot));
+      expect(getNumberWithDecimal(cashFromTokenRedeem)).to.be.equal(
+        getNumberWithDecimal(cashPosition - spot)
+      );
     });
 
-    it("does give correct cash payed for balanced spot price.", async function () {
+    it("does give correct cash payed for balanced spot price.", async function() {
       //2000-1*1000 = 1000
       const balance = getEth(1);
       const cashPosition = getEth(2000);
@@ -428,9 +512,17 @@ describe("CompositionCalculator", function() {
       const tokenAmount = getEth(1);
       const spot = getEth(1000);
 
-      const cashFromTokenRedeem = await this.contract.getCashAmountCreatedByToken(cashPosition, balance, totalTokenSupply, tokenAmount, spot);
+      const cashFromTokenRedeem = await this.contract.getCashAmountCreatedByToken(
+        cashPosition,
+        balance,
+        totalTokenSupply,
+        tokenAmount,
+        spot
+      );
 
-      expect(getNumberWithDecimal(cashFromTokenRedeem)).to.be.equal(getNumberWithDecimal(cashPosition - spot));
+      expect(getNumberWithDecimal(cashFromTokenRedeem)).to.be.equal(
+        getNumberWithDecimal(cashPosition - spot)
+      );
     });
   });
   describe("#getCurrentNetTokenValue", function() {
@@ -485,26 +577,46 @@ describe("CompositionCalculator", function() {
       await this.storage.setAccounting(price, cashPosition, balance, fee, {
         from: owner
       });
-      const cash = getEth(1200);
+      const cash = getEth(2400);
       const spot = getEth(800);
 
       const tokenCreated = await this.contract.getCurrentTokenAmountCreatedByCash(
         cash,
-        spot
+        spot,
+        0
       );
       expect(getNumberWithDecimal(tokenCreated)).to.be.equal(
         getNumberWithDecimal(
-          totalTokenSupply.times(percentageMinusCreationRedemptionFee)
+          totalTokenSupply.times(2).times(percentageMinusCreationRedemptionFee)
         )
       );
     });
+    it("does give correct token amount for unbalanced product with lower spot price.", async function() {
+      //2000+1*900 = (1200 + 800)-1*800
+      const balance = getEth(1);
+      const cashPosition = getEth(2000);
 
+      await this.storage.setAccounting(price, cashPosition, balance, fee, {
+        from: owner
+      });
+      const cash = getEth(1205);
+      const spot = getEth(800);
+
+      const tokenCreated = await this.contract.getCurrentTokenAmountCreatedByCash(
+        cash,
+        spot,
+        0
+      );
+      expect(getNumberWithDecimal(tokenCreated)).to.be.equal(
+        getNumberWithDecimal(totalTokenSupply)
+      );
+    });
     it("does give correct token amount for rebalanced product with lower spot price.", async function() {
       //2000 - 1 * 1000 = (1100 + 900) - 1 * 1000
       const balance = getEth(1);
       const cashPosition = getEth(2000);
 
-      const cash = getEth(1100);
+      const cash = getEth(2200);
       const spot = getEth(900);
       await this.storage.setAccounting(price, cashPosition, balance, fee, {
         from: owner
@@ -512,11 +624,12 @@ describe("CompositionCalculator", function() {
 
       const tokenCreated = await this.contract.getCurrentTokenAmountCreatedByCash(
         cash,
-        spot
+        spot,
+        0
       );
       expect(getNumberWithDecimal(tokenCreated)).to.be.equal(
         getNumberWithDecimal(
-          totalTokenSupply.times(percentageMinusCreationRedemptionFee)
+          totalTokenSupply.times(2).times(percentageMinusCreationRedemptionFee)
         )
       );
     });
@@ -527,7 +640,7 @@ describe("CompositionCalculator", function() {
       const cashPosition = getEth(2000);
       const totalTokenSupply = getEth(1);
 
-      const cash = getEth(900);
+      const cash = getEth(1800);
       const spot = getEth(1100);
       await this.storage.setAccounting(price, cashPosition, balance, fee, {
         from: owner
@@ -535,11 +648,12 @@ describe("CompositionCalculator", function() {
 
       const tokenCreated = await this.contract.getCurrentTokenAmountCreatedByCash(
         cash,
-        spot
+        spot,
+        0
       );
       expect(getNumberWithDecimal(tokenCreated)).to.be.equal(
         getNumberWithDecimal(
-          totalTokenSupply.times(percentageMinusCreationRedemptionFee)
+          totalTokenSupply.times(2).times(percentageMinusCreationRedemptionFee)
         )
       );
     });
@@ -549,7 +663,7 @@ describe("CompositionCalculator", function() {
       const cashPosition = getEth(2000);
       const totalTokenSupply = getEth(1);
 
-      const cash = getEth(900);
+      const cash = getEth(1800);
       const spot = getEth(1100);
       await this.storage.setAccounting(price, cashPosition, balance, fee, {
         from: owner
@@ -557,11 +671,12 @@ describe("CompositionCalculator", function() {
 
       const tokenCreated = await this.contract.getCurrentTokenAmountCreatedByCash(
         cash,
-        spot
+        spot,
+        0
       );
       expect(getNumberWithDecimal(tokenCreated)).to.be.equal(
         getNumberWithDecimal(
-          totalTokenSupply.times(percentageMinusCreationRedemptionFee)
+          totalTokenSupply.times(2).times(percentageMinusCreationRedemptionFee)
         )
       );
     });
@@ -580,7 +695,8 @@ describe("CompositionCalculator", function() {
 
       const tokenCreated = await this.contract.getCurrentTokenAmountCreatedByCash(
         cash,
-        spot
+        spot,
+        0
       );
       expect(getNumberWithDecimal(tokenCreated)).to.be.equal(
         getNumberWithDecimal(
@@ -603,7 +719,8 @@ describe("CompositionCalculator", function() {
 
       const tokenCreated = await this.contract.getCurrentTokenAmountCreatedByCash(
         cash,
-        spot
+        spot,
+        0
       );
       expect(getNumberWithDecimal(tokenCreated)).to.be.equal(
         getNumberWithDecimal(
@@ -634,14 +751,13 @@ describe("CompositionCalculator", function() {
 
       const cashFromTokenRedeem = await this.contract.getCurrentCashAmountCreatedByToken(
         tokenAmount,
-        spot
+        spot,
+        0
       );
 
       expect(getNumberWithDecimal(cashFromTokenRedeem)).to.be.equal(
         getNumberWithDecimal(
-          new BigNumber(cashPosition - spot).times(
-            percentageMinusCreationRedemptionFee
-          )
+          new BigNumber(cashPosition - spot).minus(getEth(5))
         )
       );
     });
@@ -658,14 +774,13 @@ describe("CompositionCalculator", function() {
 
       const cashFromTokenRedeem = await this.contract.getCurrentCashAmountCreatedByToken(
         tokenAmount,
-        spot
+        spot,
+        0
       );
 
       expect(getNumberWithDecimal(cashFromTokenRedeem)).to.be.equal(
         getNumberWithDecimal(
-          new BigNumber(cashPosition - spot).times(
-            percentageMinusCreationRedemptionFee
-          )
+          new BigNumber(cashPosition - spot).minus(getEth(5))
         )
       );
     });
@@ -683,14 +798,13 @@ describe("CompositionCalculator", function() {
 
       const cashFromTokenRedeem = await this.contract.getCurrentCashAmountCreatedByToken(
         tokenAmount,
-        spot
+        spot,
+        0
       );
 
       expect(getNumberWithDecimal(cashFromTokenRedeem)).to.be.equal(
         getNumberWithDecimal(
-          new BigNumber(cashPosition - spot).times(
-            percentageMinusCreationRedemptionFee
-          )
+          new BigNumber(cashPosition - spot).minus(getEth(5))
         )
       );
     });
@@ -738,6 +852,78 @@ describe("CompositionCalculator", function() {
       });
       const result = await this.contract.getTotalCashPosition();
       expect(result.toString()).to.be.equal(cashPositionPerTokenUnit);
+    });
+  });
+  describe("#removeCurrentMintingFeeFromCash", function() {
+    it("Should remove minimumMintingFee when bigger then creationFee.", async function() {
+      const cash = getEth(10);
+      const resultingCash = getEth(5);
+      const cashPositionPerTokenUnit = getEth(4).toFixed();
+      await this.storage.setAccounting(1, cashPositionPerTokenUnit, 3, 4, {
+        from: owner
+      });
+      await this.token.mintTokens(owner, getEth(1), {
+        from: owner
+      });
+
+      const result = await this.contract.removeCurrentMintingFeeFromCash(cash);
+      expect(result).to.be.bignumber.equal(String(resultingCash));
+    });
+    it("Should remove creationFee when bigger then minimumMintingFee.", async function() {
+      const cash = getEth(10000);
+      const resultingCash = ether(new BigNumber(10000).times(0.997).toString());
+      const cashPositionPerTokenUnit = getEth(4).toFixed();
+      await this.storage.setAccounting(1, cashPositionPerTokenUnit, 3, 4, {
+        from: owner
+      });
+      await this.token.mintTokens(owner, getEth(1), {
+        from: owner
+      });
+
+      const result = await this.contract.removeCurrentMintingFeeFromCash(cash);
+      expect(result).to.be.bignumber.equal(new BN(resultingCash));
+    });
+  });
+  describe("#removeMintingFeeFromCash", function() {
+    it("Should remove minimumMintingFee when bigger then creationFee.", async function() {
+      const cash = getEth(10);
+      const creationFee = getEth(0.001);
+      const minimumMintingFee = getEth(5);
+      const cashPositionPerTokenUnit = getEth(4).toFixed();
+      await this.storage.setAccounting(1, cashPositionPerTokenUnit, 3, 4, {
+        from: owner
+      });
+      await this.token.mintTokens(owner, getEth(1), {
+        from: owner
+      });
+
+      const result = await this.contract.removeMintingFeeFromCash(
+        cash,
+        creationFee,
+        minimumMintingFee
+      );
+      expect(result).to.be.bignumber.equal(String(getEth(5)));
+    });
+    it("Should remove creationFee when bigger then minimumMintingFee.", async function() {
+      const cash = getEth(10000);
+      const creationFee = getEth(0.003);
+      const minimumMintingFee = getEth(5);
+      const cashPositionPerTokenUnit = getEth(4).toFixed();
+      const resultingCash = ether(new BigNumber(10000).times(0.997).toString());
+
+      await this.storage.setAccounting(1, cashPositionPerTokenUnit, 3, 4, {
+        from: owner
+      });
+      await this.token.mintTokens(owner, getEth(1), {
+        from: owner
+      });
+
+      const result = await this.contract.removeMintingFeeFromCash(
+        cash,
+        creationFee,
+        minimumMintingFee
+      );
+      expect(result).to.be.bignumber.equal(String(resultingCash));
     });
   });
 });

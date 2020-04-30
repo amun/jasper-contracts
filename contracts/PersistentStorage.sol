@@ -29,11 +29,12 @@ contract PersistentStorage is Ownable {
     uint256 public lastActivityDay;
     uint256 public minRebalanceAmount;
     uint256 public managementFee;
+    uint256 public minimumMintingFee;
+    uint256 public minimumTrade;
+
     uint8 public balancePrecision;
 
     mapping(uint256 => Accounting[]) private accounting;
-
-    mapping(address => bool) public whitelistedAddresses;
 
     uint256[] public mintingFeeBracket;
     mapping(uint256 => uint256) public mintingFee;
@@ -49,17 +50,19 @@ contract PersistentStorage is Ownable {
     function initialize(
         address ownerAddress,
         uint256 _managementFee,
-        uint256 _minRebalanceAmount
+        uint256 _minRebalanceAmount,
+        uint8 _balancePrecision,
+        uint256 _lastMintingFee,
+        uint256 _minimumMintingFee,
+        uint256 _minimumTrade
     ) public initializer {
         initialize(ownerAddress);
         managementFee = _managementFee;
         minRebalanceAmount = _minRebalanceAmount;
-        mintingFeeBracket.push(50000 ether);
-        mintingFeeBracket.push(100000 ether);
-        mintingFee[50000 ether] = 3 ether / 1000; //0.3%
-        mintingFee[100000 ether] = 2 ether / 1000; //0.2%
-        mintingFee[~uint256(0)] = 1 ether / 1000; //0.1% all values higher
-        balancePrecision = 10;
+        mintingFee[~uint256(0)] = _lastMintingFee;
+        balancePrecision = _balancePrecision;
+        minimumMintingFee = _minimumMintingFee;
+        minimumTrade = _minimumTrade;
     }
 
     function setTokenSwapManager(address _tokenSwapManager) public onlyOwner {
@@ -87,6 +90,14 @@ contract PersistentStorage is Ownable {
         require(
             isOwner() || _msgSender() == tokenSwapManager,
             "caller is not the owner or token swap manager"
+        );
+        _;
+    }
+
+    modifier onlyOwnerOrBridge() {
+        require(
+            isOwner() || _msgSender() == bridge,
+            "caller is not the owner or bridge"
         );
         _;
     }
@@ -210,34 +221,6 @@ contract PersistentStorage is Ownable {
         );
     }
 
-    // @dev Set whitelisted addresses
-    function setWhitelistedAddress(address adddressToAdd) public onlyOwner {
-        require(adddressToAdd != address(0), "adddress must not be empty");
-
-        whitelistedAddresses[adddressToAdd] = true;
-    }
-
-    // @dev Remove whitelisted addresses
-    function removeWhitelistedAddress(address addressToRemove)
-        public
-        onlyOwner
-    {
-        require(
-            whitelistedAddresses[addressToRemove],
-            "address must be added to be removed allowed"
-        );
-
-        delete whitelistedAddresses[addressToRemove];
-    }
-
-    // @dev Updates whitelisted addresses
-    function updateWhitelistedAddress(address oldAddress, address newAddress)
-        public
-    {
-        removeWhitelistedAddress(oldAddress);
-        setWhitelistedAddress(newAddress);
-    }
-
     // @dev Get accounting values for a specific day
     // @param date format as 20200123 for 23th of January 2020
     function getAccounting(uint256 date)
@@ -353,7 +336,9 @@ contract PersistentStorage is Ownable {
         onlyOwner
     {
         require(
-            _mintingFeeLimit > mintingFeeBracket[mintingFeeBracket.length - 1],
+            mintingFeeBracket.length == 0 ||
+                _mintingFeeLimit >
+                mintingFeeBracket[mintingFeeBracket.length - 1],
             "New minting fee bracket needs to be bigger then last one"
         );
         mintingFeeBracket.push(_mintingFeeLimit);
@@ -415,5 +400,15 @@ contract PersistentStorage is Ownable {
     // @dev Sets last balance precision
     function setLastPrecision(uint8 _balancePrecision) public onlyOwner {
         balancePrecision = _balancePrecision;
+    }
+
+    // @dev Sets minimum minting fee
+    function setMinimumMintingFee(uint256 _minimumMintingFee) public onlyOwner {
+        minimumMintingFee = _minimumMintingFee;
+    }
+
+    // @dev Sets minimum trade value
+    function setMinimumTrade(uint256 _minimumTrade) public onlyOwner {
+        minimumTrade = _minimumTrade;
     }
 }

@@ -24,99 +24,32 @@ const getDateForBlockTime = async () => {
   return year * 10000 + month * 100 + day;
 };
 describe("PersistentStorage", function() {
-  const [owner, notOwner, notListed] = accounts;
+  const [owner, notOwner, notListed, bridge] = accounts;
   const managementFee = ether("7");
   const minRebalanceAmount = ether("1");
+  const lastMintingFee = ether("0.001");
+  const balancePrecision = 12;
+  const minimumMintingFee = ether("5");
+  const minimumTrade = ether("50");
   beforeEach(async function() {
     this.contract = await PersistentStorage.new({ from: owner });
-    await this.contract.initialize(owner, managementFee, minRebalanceAmount);
-  });
+    await this.contract.initialize(
+      owner,
+      managementFee,
+      minRebalanceAmount,
+      balancePrecision,
+      lastMintingFee,
+      minimumMintingFee,
+      minimumTrade
+    );
 
-  describe("#setWhitelistedAddress", function() {
-    it("does not allow a non owner to add a whitelisted address", async function() {
-      await expectRevert(
-        this.contract.setWhitelistedAddress(notOwner, { from: notOwner }),
-        "Ownable: caller is not the owner"
-      );
-    });
-
-    it("does not allow empty address to be whitelisted", async function() {
-      await expectRevert(
-        this.contract.setWhitelistedAddress(
-          "0x0000000000000000000000000000000000000000",
-          { from: owner }
-        ),
-        "adddress must not be empty"
-      );
-    });
-
-    it("adds whitelisted address", async function() {
-      await this.contract.setWhitelistedAddress(notOwner, { from: owner });
-
-      const isAddressAdded = await this.contract.whitelistedAddresses(notOwner);
-      expect(isAddressAdded).to.be.true;
-    });
-  });
-
-  describe("#removeWhitelistedAddress", function() {
-    beforeEach(async function() {
-      await this.contract.setWhitelistedAddress(notOwner, { from: owner });
-    });
-
-    it("prohibits a non owner from removing whitelisted user", async function() {
-      await expectRevert(
-        this.contract.removeWhitelistedAddress(notOwner, {
-          from: notOwner
-        }),
-        "Ownable: caller is not the owner"
-      );
-    });
-
-    it("does not allow an address to be removed which has not been added", async function() {
-      await expectRevert(
-        this.contract.removeWhitelistedAddress(notListed, { from: owner }),
-        "address must be added to be removed allowed"
-      );
-    });
-
-    it("removes the whitelisted user", async function() {
-      await this.contract.removeWhitelistedAddress(notOwner, {
-        from: owner
-      });
-
-      const isAddressAdded = await this.contract.whitelistedAddresses(notOwner);
-      expect(isAddressAdded).to.be.false;
-    });
-  });
-
-  describe("#updateWhitelistedAddress", function() {
-    beforeEach(async function() {
-      await this.contract.setWhitelistedAddress(notOwner, { from: owner });
-    });
-
-    it("prohibits a non owner from updating whitelisted address", async function() {
-      await expectRevert(
-        this.contract.updateWhitelistedAddress(notOwner, notListed, {
-          from: notOwner
-        }),
-        "Ownable: caller is not the owner"
-      );
-    });
-
-    it("updates an whitelisted user", async function() {
-      await this.contract.updateWhitelistedAddress(notOwner, notListed, {
-        from: owner
-      });
-
-      const isAddressAdded = await this.contract.whitelistedAddresses(
-        notListed
-      );
-      expect(isAddressAdded).to.be.true;
-      const isAddressAdded2 = await this.contract.whitelistedAddresses(
-        notOwner
-      );
-      expect(isAddressAdded2).to.be.false;
-    });
+    await this.contract.addMintingFeeBracket(ether("50000"), ether("0.003"), {
+      from: owner
+    }); //0.3%
+    await this.contract.addMintingFeeBracket(ether("100000"), ether("0.002"), {
+      from: owner
+    }); //0
+    await this.contract.setBridge(bridge, { from: owner });
   });
 
   describe("Accounting getter and setter", function() {

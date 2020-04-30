@@ -8,6 +8,7 @@ import "@openzeppelin/contracts-ethereum-package/contracts/ownership/Ownable.sol
 import "./CashPool.sol";
 import "./KYCVerifier.sol";
 import "./CompositionCalculator.sol";
+import "./Token/InverseToken.sol";
 
 import "./Abstract/InterfaceInverseToken.sol";
 import "./PersistentStorage.sol";
@@ -18,9 +19,9 @@ contract TokenSwapManager is Initializable, Ownable {
     using Strings for string;
     using SafeMath for uint256;
 
-    address public stablecoin;
     address public inverseToken;
 
+    InverseToken public erc20;
     KYCVerifier public kycVerifier;
     CashPool public cashPool;
     PersistentStorage public persistentStorage;
@@ -30,7 +31,8 @@ contract TokenSwapManager is Initializable, Ownable {
         string orderType,
         address whitelistedAddress,
         uint256 tokensGiven,
-        uint256 tokensRecieved
+        uint256 tokensRecieved,
+        address stablecoin
     );
 
     event RebalanceEvent(
@@ -42,7 +44,6 @@ contract TokenSwapManager is Initializable, Ownable {
 
     function initialize(
         address _owner,
-        address _stablecoin,
         address _inverseToken,
         address _cashPool,
         address _compositionCalculator
@@ -51,14 +52,12 @@ contract TokenSwapManager is Initializable, Ownable {
 
         require(
             _owner != address(0) &&
-                _stablecoin != address(0) &&
                 _inverseToken != address(0) &&
                 _cashPool != address(0) &&
                 _compositionCalculator != address(0),
             "addresses cannot be zero"
         );
 
-        stablecoin = _stablecoin;
         inverseToken = _inverseToken;
 
         cashPool = CashPool(_cashPool);
@@ -79,7 +78,9 @@ contract TokenSwapManager is Initializable, Ownable {
         uint256 tokensRecieved,
         uint256 avgBlendedFee,
         uint256 executionPrice,
-        address whitelistedAddress
+        address whitelistedAddress,
+        address stablecoin,
+        uint256 gasFee
     ) public onlyOwnerOrBridge() notPausedOrShutdown() returns (bool retVal) {
         // Require is Whitelisted
         require(
@@ -92,14 +93,18 @@ contract TokenSwapManager is Initializable, Ownable {
             transferTokenFromPool(
                 stablecoin,
                 whitelistedAddress,
-                normalizeUSDC(tokensGiven)
+                normalizeStablecoin(tokensGiven, stablecoin)
             );
             return false;
         }
 
         // Check Tokens Recieved with Composition Calculator
         uint256 _tokensRecieved = compositionCalculator
-            .getCurrentTokenAmountCreatedByCash(tokensGiven, executionPrice);
+            .getCurrentTokenAmountCreatedByCash(
+            tokensGiven,
+            executionPrice,
+            gasFee
+        );
         require(
             _tokensRecieved == tokensRecieved,
             "tokens created must equal tokens recieved"
@@ -121,7 +126,8 @@ contract TokenSwapManager is Initializable, Ownable {
             "CREATE",
             whitelistedAddress,
             tokensGiven,
-            tokensRecieved
+            tokensRecieved,
+            stablecoin
         );
 
         // Mint Tokens to Address
@@ -137,7 +143,9 @@ contract TokenSwapManager is Initializable, Ownable {
         uint256 tokensRecieved,
         uint256 avgBlendedFee,
         uint256 executionPrice,
-        address whitelistedAddress
+        address whitelistedAddress,
+        address stablecoin,
+        uint256 gasFee
     ) public onlyOwnerOrBridge() notPausedOrShutdown() returns (bool retVal) {
         // Require Whitelisted
         require(
@@ -157,7 +165,11 @@ contract TokenSwapManager is Initializable, Ownable {
 
         // Check Cash Recieved with Composition Calculator
         uint256 _tokensRecieved = compositionCalculator
-            .getCurrentCashAmountCreatedByToken(tokensGiven, executionPrice);
+            .getCurrentCashAmountCreatedByToken(
+            tokensGiven,
+            executionPrice,
+            gasFee
+        );
         require(
             _tokensRecieved == tokensRecieved,
             "cash redeemed must equal tokens recieved"
@@ -175,7 +187,12 @@ contract TokenSwapManager is Initializable, Ownable {
         );
 
         // Redeem Stablecoin or Perform Delayed Settlement
-        redeemFunds(tokensGiven, tokensRecieved, whitelistedAddress);
+        redeemFunds(
+            tokensGiven,
+            tokensRecieved,
+            whitelistedAddress,
+            stablecoin
+        );
 
         // Burn Tokens to Address
         InterfaceInverseToken token = InterfaceInverseToken(inverseToken);
@@ -188,7 +205,8 @@ contract TokenSwapManager is Initializable, Ownable {
         string memory orderType,
         address whiteListedAddress,
         uint256 tokensGiven,
-        uint256 tokensRecieved
+        uint256 tokensRecieved,
+        address stablecoin
     ) internal {
         require(
             tokensGiven != 0 && tokensRecieved != 0,
@@ -199,20 +217,25 @@ contract TokenSwapManager is Initializable, Ownable {
             orderType,
             whiteListedAddress,
             tokensGiven,
-            tokensRecieved
+            tokensRecieved,
+            stablecoin
         );
     }
 
     function settleDelayedFunds(
         uint256 tokensToRedeem,
-        address whitelistedAddress
+        address whitelistedAddress,
+        address stablecoin
     ) public onlyOwnerOrBridge notPausedOrShutdown {
         require(
             kycVerifier.isAddressWhitelisted(whitelistedAddress),
             "only whitelisted may redeem funds"
         );
 
-        bool isSufficientFunds = isHotWalletSufficient(tokensToRedeem);
+        bool isSufficientFunds = isHotWalletSufficient(
+            tokensToRedeem,
+            stablecoin
+        );
         require(
             isSufficientFunds == true,
             "not enough funds in the hot wallet"
@@ -230,28 +253,33 @@ contract TokenSwapManager is Initializable, Ownable {
         transferTokenFromPool(
             stablecoin,
             whitelistedAddress,
-            normalizeUSDC(tokensToRedeem)
+            normalizeStablecoin(tokensToRedeem, stablecoin)
         );
     }
 
     function redeemFunds(
         uint256 tokensGiven,
         uint256 tokensToRedeem,
-        address whitelistedAddress
+        address whitelistedAddress,
+        address stablecoin
     ) internal {
-        bool isSufficientFunds = isHotWalletSufficient(tokensToRedeem);
+        bool isSufficientFunds = isHotWalletSufficient(
+            tokensToRedeem,
+            stablecoin
+        );
 
         if (isSufficientFunds) {
             transferTokenFromPool(
                 stablecoin,
                 whitelistedAddress,
-                normalizeUSDC(tokensToRedeem)
+                normalizeStablecoin(tokensToRedeem, stablecoin)
             );
             writeOrderResponse(
                 "REDEEM",
                 whitelistedAddress,
                 tokensGiven,
-                tokensToRedeem
+                tokensToRedeem,
+                stablecoin
             );
         } else {
             uint256 tokensOutstanding = persistentStorage
@@ -265,25 +293,31 @@ contract TokenSwapManager is Initializable, Ownable {
                 "REDEEM_NO_SETTLEMENT",
                 whitelistedAddress,
                 tokensGiven,
-                tokensToRedeem
+                tokensToRedeem,
+                stablecoin
             );
         }
     }
 
-    function isHotWalletSufficient(uint256 tokensToRedeem)
+    function isHotWalletSufficient(uint256 tokensToRedeem, address stablecoin)
         internal
-        view
         returns (bool)
     {
         InterfaceInverseToken _stablecoin = InterfaceInverseToken(stablecoin);
         uint256 stablecoinBalance = _stablecoin.balanceOf(address(cashPool));
 
-        if (normalizeUSDC(tokensToRedeem) > stablecoinBalance) return false;
+        if (normalizeStablecoin(tokensToRedeem, stablecoin) > stablecoinBalance)
+            return false;
         return true;
     }
 
-    function normalizeUSDC(uint256 usdcValue) public pure returns (uint256) {
-        return usdcValue / 10**12;
+    function normalizeStablecoin(uint256 stablecoinValue, address stablecoin)
+        internal
+        returns (uint256)
+    {
+        erc20 = InverseToken(stablecoin);
+        uint256 exponent = 18 - erc20.decimals();
+        return stablecoinValue / 10**exponent; // 6 decimal stable coin = 10**12
     }
 
     ////////////////    Daily Rebalance     ////////////////

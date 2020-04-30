@@ -27,7 +27,25 @@ describe("Modifier", function() {
     this.storage = await PersistentStorage.new({ from: owner });
     const managementFee = ether("7");
     const minRebalanceAmount = ether("1");
-    await this.storage.initialize(owner, managementFee, minRebalanceAmount);
+    const lastMintingFee = ether("0.001");
+    const balancePrecision = 12;
+    const minimumMintingFee = ether("5");
+    const minimumTrade = ether("50");
+    await this.storage.initialize(
+      owner,
+      managementFee,
+      minRebalanceAmount,
+      balancePrecision,
+      lastMintingFee,
+      minimumMintingFee,
+      minimumTrade
+    );
+    await this.storage.addMintingFeeBracket(ether("50000"), ether("0.003"), {
+      from: owner
+    }); //0.3%
+    await this.storage.addMintingFeeBracket(ether("100000"), ether("0.002"), {
+      from: owner
+    }); //0
     // Inverse Token + Stablecoin Initialize
     this.inverseToken = await ERC20WithMinting.new({ from: owner });
     await this.inverseToken.initialize(
@@ -49,7 +67,7 @@ describe("Modifier", function() {
 
     // Initialize KYC Verifier
     this.kycVerifier = await KYCVerifier.new({ from: owner });
-    await this.kycVerifier.initialize(this.storage.address);
+    await this.kycVerifier.initialize(owner);
 
     // Deploy Cash Pool
     this.cashPool = await CashPool.new({ from: owner });
@@ -74,7 +92,6 @@ describe("Modifier", function() {
     this.tokenSwapManager = await TokenSwapManager.new({ from: owner });
     await this.tokenSwapManager.initialize(
       owner,
-      this.stableCoin.address,
       this.inverseToken.address,
       this.cashPool.address,
       this.compositionCalculator.address
@@ -94,10 +111,10 @@ describe("Modifier", function() {
     const price = getEth(1000);
     const lendingFee = getEth(0);
     const tokensGiven = getEth(10);
-    const tokensRecieved = getEth(0.00000997);
+    const tokensRecieved = getEth(0.000005);
 
     beforeEach(async function() {
-      await this.storage.setWhitelistedAddress(user, { from: owner });
+      await this.kycVerifier.setWhitelistedAddress(user, { from: owner });
       await this.inverseToken.mintTokens(owner, totalTokenSupply, {
         from: owner
       });
@@ -119,7 +136,9 @@ describe("Modifier", function() {
         tokensRecieved, // Tokens Recieved
         2, // Avg Blended Fee
         price,
-        user, // Whitelisted User
+        user, // Whitelisted User,
+        this.stableCoin.address, // Stablecoin address
+        0,
         { from: bridge } // Sent From Bridge
       );
 
@@ -127,7 +146,8 @@ describe("Modifier", function() {
         orderType: "CREATE",
         whitelistedAddress: user,
         tokensGiven: tokensGiven.toString(),
-        tokensRecieved: tokensRecieved.toString()
+        tokensRecieved: tokensRecieved.toString(),
+        stablecoin: this.stableCoin.address
       });
     });
 
@@ -140,6 +160,8 @@ describe("Modifier", function() {
           2,
           price,
           user,
+          this.stableCoin.address,
+          0,
           { from: user }
         ),
         "caller is not the owner or bridge"
@@ -156,6 +178,8 @@ describe("Modifier", function() {
           2,
           price,
           user,
+          this.stableCoin.address,
+          0,
           { from: bridge }
         ),
         "contract is paused"
@@ -172,6 +196,8 @@ describe("Modifier", function() {
         2,
         price,
         user,
+        this.stableCoin.address,
+        0,
         { from: bridge }
       );
     });
@@ -186,6 +212,8 @@ describe("Modifier", function() {
           2,
           price,
           user,
+          this.stableCoin.address,
+          0,
           { from: bridge }
         ),
         "contract is shutdown"
@@ -195,7 +223,7 @@ describe("Modifier", function() {
 
   describe("#inverseToken", function() {
     beforeEach(async function() {
-      await this.storage.setWhitelistedAddress(user, { from: owner });
+      await this.kycVerifier.setWhitelistedAddress(user, { from: owner });
     });
 
     it("mints token from owner", async function() {
@@ -227,7 +255,7 @@ describe("Modifier", function() {
 
   describe("#cashPool", function() {
     beforeEach(async function() {
-      await this.storage.setWhitelistedAddress(user, { from: owner });
+      await this.kycVerifier.setWhitelistedAddress(user, { from: owner });
     });
 
     it("allows owner to move tokens from pool", async function() {
@@ -251,12 +279,9 @@ describe("Modifier", function() {
       });
 
       await expectRevert(
-        this.cashPool.moveTokenfromPool(
-          this.inverseToken.address,
-          bridge,
-          5,
-          { from: user }
-        ),
+        this.cashPool.moveTokenfromPool(this.inverseToken.address, bridge, 5, {
+          from: user
+        }),
         "caller is not the owner or token swap manager"
       );
     });

@@ -24,7 +24,7 @@ const getUsdc = num =>
   new BigNumber(num).times(new BigNumber("10").pow("6")).integerValue();
 
 const normalizeUsdc = num =>
-  new BigNumber(num).times(new BigNumber("10").pow("-12")).integerValue();
+  new BigNumber(num).dividedBy(new BigNumber("10").pow("12")).integerValue();
 
 describe("TokenSwapManager", function() {
   const [owner, user, bridge] = accounts;
@@ -35,8 +35,25 @@ describe("TokenSwapManager", function() {
     this.storage = await PersistentStorage.new({ from: owner });
     const managementFee = ether("7");
     const minRebalanceAmount = ether("1");
-    await this.storage.initialize(owner, managementFee, minRebalanceAmount);
-
+    const lastMintingFee = ether("0.001");
+    const balancePrecision = 12;
+    const minimumMintingFee = ether("5");
+    const minimumTrade = ether("50");
+    await this.storage.initialize(
+      owner,
+      managementFee,
+      minRebalanceAmount,
+      balancePrecision,
+      lastMintingFee,
+      minimumMintingFee,
+      minimumTrade
+    );
+    await this.storage.addMintingFeeBracket(ether("50000"), ether("0.003"), {
+      from: owner
+    }); //0.3%
+    await this.storage.addMintingFeeBracket(ether("100000"), ether("0.002"), {
+      from: owner
+    }); //0.2%
     // Inverse Token + Stablecoin Initialize
     this.inverseToken = await ERC20WithMinting.new({ from: owner });
     await this.inverseToken.initialize(
@@ -47,18 +64,18 @@ describe("TokenSwapManager", function() {
       owner
     );
 
-    this.stableCoin = await ERC20WithMinting.new({ from: owner });
-    await this.stableCoin.initialize(
+    this.stablecoin = await ERC20WithMinting.new({ from: owner });
+    await this.stablecoin.initialize(
       "Stablecoin",
       "USDC",
-      18,
+      6,
       this.storage.address,
       owner
     );
 
     // Initialize KYC Verifier
     this.kycVerifier = await KYCVerifier.new({ from: owner });
-    await this.kycVerifier.initialize(this.storage.address);
+    await this.kycVerifier.initialize(owner);
 
     // Initialize Cash Pool
     this.cashPool = await CashPool.new({ from: owner });
@@ -83,7 +100,6 @@ describe("TokenSwapManager", function() {
     this.tokenSwapManager = await TokenSwapManager.new({ from: owner });
     await this.tokenSwapManager.initialize(
       owner,
-      this.stableCoin.address,
       this.inverseToken.address,
       this.cashPool.address,
       this.compositionCalculator.address
@@ -103,10 +119,11 @@ describe("TokenSwapManager", function() {
     const price = getEth(1000);
     const lendingFee = getEth(0);
     const tokensGiven = getEth(10);
-    const tokensRecieved = getEth(0.00000997);
+
+    const tokensRecieved = getEth(0.000005);
 
     beforeEach(async function() {
-      await this.storage.setWhitelistedAddress(user, { from: owner });
+      await this.kycVerifier.setWhitelistedAddress(user, { from: owner });
       await this.inverseToken.mintTokens(owner, totalTokenSupply, {
         from: owner
       });
@@ -127,6 +144,8 @@ describe("TokenSwapManager", function() {
         2, // Avg Blended Fee
         price,
         user, // Whitelisted User
+        this.stablecoin.address, // Stablecoin Address
+        0,
         { from: bridge } // Sent From Bridge
       );
     });
@@ -136,7 +155,8 @@ describe("TokenSwapManager", function() {
         orderType: "CREATE",
         whitelistedAddress: user,
         tokensGiven: tokensGiven.toString(),
-        tokensRecieved: tokensRecieved.toString()
+        tokensRecieved: tokensRecieved.toString(),
+        stablecoin: this.stablecoin.address
       });
     });
 
@@ -179,6 +199,8 @@ describe("TokenSwapManager", function() {
           2,
           price,
           user,
+          this.stablecoin.address, // Stablecoin Address
+          0,
           { from: bridge }
         ),
         "only whitelisted address may place orders"
@@ -188,17 +210,26 @@ describe("TokenSwapManager", function() {
     it("throws error from trading engine: return user funds", async function() {
       const usdcAmount = getUsdc(10);
       const usdcAmountWithDecimals = getEth(10);
-
-      await this.storage.setWhitelistedAddress(user, { from: owner });
-      await this.stableCoin.mintTokens(this.cashPool.address, usdcAmount, {
+      await this.kycVerifier.setWhitelistedAddress(user, { from: owner });
+      await this.stablecoin.mintTokens(this.cashPool.address, usdcAmount, {
         from: owner
       });
-      await this.tokenSwapManager.createOrder(false, usdcAmountWithDecimals, usdcAmountWithDecimals, 2, price, user, {
-        from: bridge
-      });
+      await this.tokenSwapManager.createOrder(
+        false,
+        usdcAmountWithDecimals,
+        usdcAmountWithDecimals,
+        2,
+        price,
+        user,
+        this.stablecoin.address, // Stablecoin Address
+        0,
+        {
+          from: bridge
+        }
+      );
 
-      const userReturnedBalance = await this.stableCoin.balanceOf(user);
-      expect(userReturnedBalance.toNumber()).to.be.equal(usdcAmount.toNumber());
+      const userReturnedBalance = await this.stablecoin.balanceOf(user);
+      expect(userReturnedBalance.toString()).to.be.equal(usdcAmount.toString());
     });
   });
 
@@ -206,15 +237,14 @@ describe("TokenSwapManager", function() {
     const cashPosition = getEth(2000);
     const balance = getEth(1);
     const totalTokenSupply = getEth(10);
-    const stableCoinsToMint = getEth(10000);
+    const stablecoinsToMint = getEth(10000);
     const price = getEth(1000);
     const spot = getEth(1200);
     const lendingFee = getEth(0);
     const tokensGiven = getEth(1);
-    const tokensRecieved = new BigNumber(cashPosition - spot).times(0.997);
-
+    const tokensRecieved = new BigNumber(cashPosition - spot).minus(getEth(5));
     beforeEach(async function() {
-      await this.storage.setWhitelistedAddress(user, { from: owner });
+      await this.kycVerifier.setWhitelistedAddress(user, { from: owner });
       await this.storage.setAccounting(
         price,
         cashPosition,
@@ -224,6 +254,7 @@ describe("TokenSwapManager", function() {
           from: owner
         }
       );
+
       await this.inverseToken.mintTokens(
         this.cashPool.address,
         totalTokenSupply,
@@ -232,9 +263,9 @@ describe("TokenSwapManager", function() {
         }
       );
 
-      await this.stableCoin.mintTokens(
+      await this.stablecoin.mintTokens(
         this.cashPool.address,
-        stableCoinsToMint,
+        stablecoinsToMint,
         {
           from: owner
         }
@@ -247,24 +278,25 @@ describe("TokenSwapManager", function() {
         2, // Avg Blended Fee
         spot,
         user, // Whitelisted User
+        this.stablecoin.address, // Stablecoin Address
+        0,
         { from: bridge } // Sent From Bridge
       );
     });
 
     it("emits successful order event", async function() {
-
       expectEvent(this.receipt, "SuccessfulOrder", {
         orderType: "REDEEM",
         whitelistedAddress: user,
         tokensGiven: tokensGiven.toString(),
-        tokensRecieved: tokensRecieved.toString()
+        tokensRecieved: tokensRecieved.toString(),
+        stablecoin: this.stablecoin.address
       });
     });
 
-
     it("successfully redeem after creation order", async function() {
-      const tokensSent = getEth(10);
-      const tokensCreated = getEth(0.00997);
+      const tokensSent = getEth(15);
+      const tokensCreated = getEth(0.01);
 
       await this.tokenSwapManager.createOrder(
         true,
@@ -273,48 +305,51 @@ describe("TokenSwapManager", function() {
         2,
         price,
         user,
+        this.stablecoin.address, // Stablecoin Address
+        0,
         { from: bridge }
       );
       const receipt = await this.tokenSwapManager.redeemOrder(
         true,
-        100000000000,
-        99700000000000,
+        tokensCreated,
+        getEth(5),
         2,
         price,
         user,
+        this.stablecoin.address, // Stablecoin Address
+        0,
         { from: bridge }
       );
       expectEvent(receipt, "SuccessfulOrder", {
         orderType: "REDEEM",
         whitelistedAddress: user,
-        tokensGiven: "100000000000",
-        tokensRecieved: "99700000000000"
+        tokensGiven: String(tokensCreated),
+        tokensRecieved: String(getEth(5)),
+        stablecoin: this.stablecoin.address
       });
     });
 
     it("successfully burn tokens from cash pool", async function() {
-      const balance = await this.inverseToken.balanceOf(
-        this.cashPool.address
-      );
+      const balance = await this.inverseToken.balanceOf(this.cashPool.address);
       expect(balance.toString()).to.be.equal(
         new BigNumber(totalTokenSupply).minus(tokensGiven).toString()
       );
     });
   });
 
-  describe('#delayedRedemptionOrder', function() {
+  describe("#delayedRedemptionOrder", function() {
     const cashPosition = getEth(2000);
     const balance = getEth(1);
     const totalTokenSupply = getEth(10);
-    const stableCoinsToMint = getEth(10000);
+    const stablecoinsToMint = getUsdc(10000);
     const price = getEth(1000);
     const spot = getEth(1200);
     const lendingFee = getEth(0);
     const tokensGiven = getEth(1);
-    const tokensRecieved = new BigNumber(cashPosition - spot).times(0.997);
+    const tokensRecieved = new BigNumber(cashPosition - spot).minus(getEth(5));
 
     beforeEach(async function() {
-      await this.storage.setWhitelistedAddress(user, { from: owner });
+      await this.kycVerifier.setWhitelistedAddress(user, { from: owner });
       await this.storage.setAccounting(
         price,
         cashPosition,
@@ -339,9 +374,10 @@ describe("TokenSwapManager", function() {
         2, // Avg Blended Fee
         spot,
         user, // Whitelisted User
+        this.stablecoin.address, // Stablecoin Address
+        0,
         { from: bridge } // Sent From Bridge
       );
-
     });
 
     it("executes redemption without settlement", async function() {
@@ -349,43 +385,69 @@ describe("TokenSwapManager", function() {
         orderType: "REDEEM_NO_SETTLEMENT",
         whitelistedAddress: user,
         tokensGiven: tokensGiven.toString(),
-        tokensRecieved: tokensRecieved.toString()
+        tokensRecieved: tokensRecieved.toString(),
+        stablecoin: this.stablecoin.address
       });
-
     });
 
     it("settles redemption at a later date", async function() {
-      await this.stableCoin.mintTokens(
+      await this.stablecoin.mintTokens(
         this.cashPool.address,
-        stableCoinsToMint,
+        stablecoinsToMint,
         { from: owner }
       );
-      await this.tokenSwapManager.settleDelayedFunds(tokensRecieved, user, { from: bridge });
-      const balance = await this.stableCoin.balanceOf(user);
-      const normalizedUSDC = normalizeUsdc(tokensRecieved)
+      await this.tokenSwapManager.settleDelayedFunds(
+        tokensRecieved,
+        user,
+        this.stablecoin.address,
+        {
+          from: bridge
+        }
+      );
+      const balance = await this.stablecoin.balanceOf(user);
+      const normalizedUSDC = normalizeUsdc(tokensRecieved);
       expect(balance.toString()).to.be.equal(normalizedUSDC.toString());
     });
-
   });
 
   describe("#unsuccessfulRedemptionOrder", function() {
     it("throws error when user is not whitelisted", async function() {
       await expectRevert(
-        this.tokenSwapManager.redeemOrder(true, 10, 10, 2, 1000, user, {
-          from: bridge
-        }),
+        this.tokenSwapManager.redeemOrder(
+          true,
+          10,
+          10,
+          2,
+          1000,
+          user,
+          this.stablecoin.address,
+          0,
+          {
+            from: bridge
+          }
+        ),
         "only whitelisted address may place orders"
       );
     });
 
     it("throws error from trading engine: return user funds", async function() {
-      await this.storage.setWhitelistedAddress(user, { from: owner });
+      await this.kycVerifier.setWhitelistedAddress(user, { from: owner });
       await this.inverseToken.mintTokens(this.cashPool.address, 10, {
         from: owner
       });
-      await this.tokenSwapManager.redeemOrder(false, 10, 10, 2, 1000, user, {
-        from: bridge
-      });
+      await this.tokenSwapManager.redeemOrder(
+        false,
+        10,
+        10,
+        2,
+        1000,
+        user,
+        this.stablecoin.address,
+        0,
+        {
+          from: bridge
+        }
+      );
 
       const userReturnedBalance = await this.inverseToken.balanceOf(user);
       expect(userReturnedBalance.toNumber()).to.be.equal(10);
@@ -460,7 +522,7 @@ describe("TokenSwapManager", function() {
         lendingFee,
         1,
         getEth(0),
-        10
+        12
       );
 
       const endBalance = result[1];
@@ -507,7 +569,7 @@ describe("TokenSwapManager", function() {
         lendingFee,
         1,
         getEth(0),
-        10
+        12
       );
       const endBalance = result[1];
       const endCashPosition = result[2];
@@ -555,7 +617,7 @@ describe("TokenSwapManager", function() {
         lendingFee,
         1,
         getEth(0),
-        10
+        12
       );
       const endBalance = result[1];
       const endCashPosition = result[2];
@@ -674,7 +736,7 @@ describe("TokenSwapManager", function() {
         0,
         1,
         getEth(0),
-        10
+        12
       );
       const endBalance = result[1];
       const endCashPosition = result[2];
@@ -721,7 +783,7 @@ describe("TokenSwapManager", function() {
         0,
         1,
         getEth(0),
-        10
+        12
       );
       const endBalance = result[1];
       const endCashPosition = result[2];

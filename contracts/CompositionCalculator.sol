@@ -300,13 +300,17 @@ contract CompositionCalculator is Initializable {
      * @dev Returns cash without fee
      * @param _cash The cash provided to create token
      * @param _mintingFee The minting fee to remove
+     * @param _minimumMintingFee The minimum minting fee in $ to remove
      */
-    function removeMintingFeeFromCash(uint256 _cash, uint256 _mintingFee)
-        public
-        pure
-        returns (uint256 cashAfterFee)
-    {
+    function removeMintingFeeFromCash(
+        uint256 _cash,
+        uint256 _mintingFee,
+        uint256 _minimumMintingFee
+    ) public pure returns (uint256 cashAfterFee) {
         uint256 creationFeeInCash = DSMath.wmul(_cash, _mintingFee);
+        if (_minimumMintingFee > creationFeeInCash) {
+            creationFeeInCash = _minimumMintingFee;
+        }
         cashAfterFee = DSMath.sub(_cash, creationFeeInCash);
     }
 
@@ -348,7 +352,12 @@ contract CompositionCalculator is Initializable {
         returns (uint256 cashAfterFee)
     {
         uint256 creationFee = persistentStorage.getMintingFee(_cash);
-        cashAfterFee = removeMintingFeeFromCash(_cash, creationFee);
+        uint256 minimumMintingFee = persistentStorage.minimumMintingFee();
+        cashAfterFee = removeMintingFeeFromCash(
+            _cash,
+            creationFee,
+            minimumMintingFee
+        );
     }
 
     /**
@@ -359,9 +368,11 @@ contract CompositionCalculator is Initializable {
     function getCurrentTokenAmountCreatedByCash(
         //Create
         uint256 _cash,
-        uint256 _spotPrice
+        uint256 _spotPrice,
+        uint256 _gasFee
     ) public view returns (uint256 tokenAmountCreated) {
-        uint256 cashAfterFee = removeCurrentMintingFeeFromCash(_cash);
+        uint256 cashAfterGas = DSMath.sub(_cash, _gasFee);
+        uint256 cashAfterFee = removeCurrentMintingFeeFromCash(cashAfterGas);
         tokenAmountCreated = getTokenAmountCreatedByCash(
             persistentStorage.getCashPositionPerTokenUnit(),
             persistentStorage.getBalancePerTokenUnit(),
@@ -379,7 +390,8 @@ contract CompositionCalculator is Initializable {
     function getCurrentCashAmountCreatedByToken(
         //Redeem
         uint256 _tokenAmount,
-        uint256 _spotPrice
+        uint256 _spotPrice,
+        uint256 _gasFee
     ) public view returns (uint256 cashFromTokenRedeem) {
         uint256 lendingFee = persistentStorage.getLendingFee();
         uint256 daysSinceLastRebalance = getDaysSinceLastRebalance() + 1;
@@ -408,6 +420,8 @@ contract CompositionCalculator is Initializable {
         cashFromTokenRedeem = removeCurrentMintingFeeFromCash(
             DSMath.sub(cashFromToken, fiatForLendingFee)
         );
+
+        cashFromTokenRedeem = DSMath.sub(cashFromTokenRedeem, _gasFee);
     }
 
     function getDaysSinceLastRebalance()

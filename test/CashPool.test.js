@@ -24,12 +24,29 @@ describe("CashPool", function() {
     persistentStorage = await PersistentStorage.new({ from: owner });
     const managementFee = ether("7");
     const minRebalanceAmount = ether("1");
+    const lastMintingFee = ether("0.001");
+    const balancePrecision = 12;
+    const minimumMintingFee = ether("5");
+    const minimumTrade = ether("50");
     await persistentStorage.initialize(
       owner,
       managementFee,
-      minRebalanceAmount
+      minRebalanceAmount,
+      balancePrecision,
+      lastMintingFee,
+      minimumMintingFee,
+      minimumTrade
     );
-    await persistentStorage.setWhitelistedAddress(user, { from: owner }); // user is whitelisted
+    await persistentStorage.addMintingFeeBracket(
+      ether("50000"),
+      ether("0.003"),
+      { from: owner }
+    ); //0.3%
+    await persistentStorage.addMintingFeeBracket(
+      ether("100000"),
+      ether("0.002"),
+      { from: owner }
+    ); //0.2%
     await persistentStorage.setTokenSwapManager(tokenSwap, { from: owner });
 
     // initialize token
@@ -43,8 +60,9 @@ describe("CashPool", function() {
     );
     await token.mintTokens(user, 10, { from: owner });
 
-    kycVerifier = await KYCVerifier.new({ owner });
-    await kycVerifier.initialize(persistentStorage.address);
+    kycVerifier = await KYCVerifier.new({ from: owner });
+    await kycVerifier.initialize(owner);
+    await kycVerifier.setWhitelistedAddress(user, { from: owner }); // user is whitelisted
 
     // initialize cash pool
     this.contract = await CashPool.new({ from: owner });
