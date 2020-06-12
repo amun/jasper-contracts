@@ -222,7 +222,7 @@ library SafeMath {
     }
 }
 
-// File: contracts/utils/Math.sol
+// File: contracts/short-tokens/utils/Math.sol
 
 /// Math.sol -- mixin for inline numerical wizardry
 
@@ -319,7 +319,7 @@ library DSMath {
     }
 }
 
-// File: contracts/utils/DateTimeLibrary.sol
+// File: contracts/short-tokens/utils/DateTimeLibrary.sol
 
 pragma solidity ^0.5.0;
 
@@ -926,7 +926,7 @@ contract Ownable is Initializable, Context {
     uint256[50] private ______gap;
 }
 
-// File: contracts/PersistentStorage.sol
+// File: contracts/short-tokens/PersistentStorage.sol
 
 pragma solidity ^0.5.0;
 
@@ -957,11 +957,13 @@ contract PersistentStorage is Ownable {
 
     uint256 public lastActivityDay;
     uint256 public minRebalanceAmount;
-    uint256 private managementFee;
+    uint256 public managementFee;
+    uint256 public minimumMintingFee;
+    uint256 public minimumTrade;
+
+    uint8 public balancePrecision;
 
     mapping(uint256 => Accounting[]) private accounting;
-
-    mapping(address => bool) public whitelistedAddresses;
 
     uint256[] public mintingFeeBracket;
     mapping(uint256 => uint256) public mintingFee;
@@ -977,16 +979,19 @@ contract PersistentStorage is Ownable {
     function initialize(
         address ownerAddress,
         uint256 _managementFee,
-        uint256 _minRebalanceAmount
+        uint256 _minRebalanceAmount,
+        uint8 _balancePrecision,
+        uint256 _lastMintingFee,
+        uint256 _minimumMintingFee,
+        uint256 _minimumTrade
     ) public initializer {
         initialize(ownerAddress);
         managementFee = _managementFee;
         minRebalanceAmount = _minRebalanceAmount;
-        mintingFeeBracket.push(50000 ether);
-        mintingFeeBracket.push(100000 ether);
-        mintingFee[50000 ether] = 3 ether / 1000; //0.3%
-        mintingFee[100000 ether] = 2 ether / 1000; //0.2%
-        mintingFee[~uint256(0)] = 1 ether / 1000; //0.1% all values higher
+        mintingFee[~uint256(0)] = _lastMintingFee;
+        balancePrecision = _balancePrecision;
+        minimumMintingFee = _minimumMintingFee;
+        minimumTrade = _minimumTrade;
     }
 
     function setTokenSwapManager(address _tokenSwapManager) public onlyOwner {
@@ -1018,19 +1023,19 @@ contract PersistentStorage is Ownable {
         _;
     }
 
+    modifier onlyOwnerOrBridge() {
+        require(
+            isOwner() || _msgSender() == bridge,
+            "caller is not the owner or bridge"
+        );
+        _;
+    }
+
     function setDelayedRedemptionsByUser(
         uint256 amountToRedeem,
         address whitelistedAddress
     ) public onlyOwnerOrTokenSwap {
         delayedRedemptionsByUser[whitelistedAddress] = amountToRedeem;
-    }
-
-    function getDelayedRedemptionsByUser(address whitelistedAddress)
-        public
-        view
-        returns (uint256)
-    {
-        return delayedRedemptionsByUser[whitelistedAddress];
     }
 
     /*
@@ -1145,34 +1150,6 @@ contract PersistentStorage is Ownable {
         );
     }
 
-    // @dev Set whitelisted addresses
-    function setWhitelistedAddress(address adddressToAdd) public onlyOwner {
-        require(adddressToAdd != address(0), "adddress must not be empty");
-
-        whitelistedAddresses[adddressToAdd] = true;
-    }
-
-    // @dev Remove whitelisted addresses
-    function removeWhitelistedAddress(address addressToRemove)
-        public
-        onlyOwner
-    {
-        require(
-            whitelistedAddresses[addressToRemove],
-            "address must be added to be removed allowed"
-        );
-
-        delete whitelistedAddresses[addressToRemove];
-    }
-
-    // @dev Updates whitelisted addresses
-    function updateWhitelistedAddress(address oldAddress, address newAddress)
-        public
-    {
-        removeWhitelistedAddress(oldAddress);
-        setWhitelistedAddress(newAddress);
-    }
-
     // @dev Get accounting values for a specific day
     // @param date format as 20200123 for 23th of January 2020
     function getAccounting(uint256 date)
@@ -1277,11 +1254,6 @@ contract PersistentStorage is Ownable {
                 .lendingFee;
     }
 
-    // @dev Returns lending fee
-    function getManagementFee() public view returns (uint256 lendingRate) {
-        return managementFee;
-    }
-
     // @dev Sets last minting fee
     function setLastMintingFee(uint256 _mintingFee) public onlyOwner {
         mintingFee[~uint256(0)] = _mintingFee;
@@ -1293,7 +1265,9 @@ contract PersistentStorage is Ownable {
         onlyOwner
     {
         require(
-            _mintingFeeLimit > mintingFeeBracket[mintingFeeBracket.length - 1],
+            mintingFeeBracket.length == 0 ||
+                _mintingFeeLimit >
+                mintingFeeBracket[mintingFeeBracket.length - 1],
             "New minting fee bracket needs to be bigger then last one"
         );
         mintingFeeBracket.push(_mintingFeeLimit);
@@ -1351,9 +1325,24 @@ contract PersistentStorage is Ownable {
         }
         return mintingFee[~uint256(0)];
     }
+
+    // @dev Sets last balance precision
+    function setLastPrecision(uint8 _balancePrecision) public onlyOwner {
+        balancePrecision = _balancePrecision;
+    }
+
+    // @dev Sets minimum minting fee
+    function setMinimumMintingFee(uint256 _minimumMintingFee) public onlyOwner {
+        minimumMintingFee = _minimumMintingFee;
+    }
+
+    // @dev Sets minimum trade value
+    function setMinimumTrade(uint256 _minimumTrade) public onlyOwner {
+        minimumTrade = _minimumTrade;
+    }
 }
 
-// File: contracts/Abstract/InterfaceInverseToken.sol
+// File: contracts/short-tokens/Abstract/InterfaceInverseToken.sol
 
 pragma solidity ^0.5.0;
 
@@ -1444,7 +1433,7 @@ interface InterfaceInverseToken {
     );
 }
 
-// File: contracts/CompositionCalculator.sol
+// File: contracts/short-tokens/CompositionCalculator.sol
 
 pragma solidity ^0.5.0;
 
@@ -1561,6 +1550,7 @@ contract CompositionCalculator is Initializable {
      * @param _lendingFee The yearly average lending fee for borrowed balance
      * @param _days The days since the last fee calculation  (Natural number)
      * @param _minRebalanceAmount The minimum amount to rebalance
+     * @param _changeInBalancePrecision The change in balance precision
      */
     function calculatePCF(
         uint256 _cashPosition,
@@ -1568,7 +1558,8 @@ contract CompositionCalculator is Initializable {
         uint256 _price,
         uint256 _lendingFee,
         uint256 _days,
-        uint256 _minRebalanceAmount
+        uint256 _minRebalanceAmount,
+        uint256 _changeInBalancePrecision
     )
         public
         pure
@@ -1614,12 +1605,16 @@ contract CompositionCalculator is Initializable {
             _balance,
             _price
         );
-
+        changeInBalance = floor(changeInBalance, _changeInBalancePrecision);
         if (changeInBalance < _minRebalanceAmount) {
             changeInBalance = 0;
             endBalance = _balance;
         }
-
+        endBalance = addOrSub(
+            _balance, //cashPositionWithoutFee
+            changeInBalance,
+            isChangeInBalanceNeg
+        );
         //result
         endCashPosition = addOrSub(
             endCashPosition, //cashPositionWithoutFee
@@ -1639,6 +1634,7 @@ contract CompositionCalculator is Initializable {
      * @param _price The momentary price of the crypto
      * @param _lendingFee The yearly average lending fee for borrowed balance
      * @param _days The days since the last fee calculation (Natural number)
+     * @param _changeInBalancePrecision The change in balance precision
      */
     function calculatePCFWithoutMin(
         //getDeliverables
@@ -1646,7 +1642,8 @@ contract CompositionCalculator is Initializable {
         uint256 _balance,
         uint256 _price,
         uint256 _lendingFee,
-        uint256 _days
+        uint256 _days,
+        uint256 _changeInBalancePrecision
     )
         public
         pure
@@ -1666,7 +1663,8 @@ contract CompositionCalculator is Initializable {
                 _price,
                 _lendingFee,
                 _days,
-                0
+                0,
+                _changeInBalancePrecision
             );
     }
 
@@ -1688,22 +1686,15 @@ contract CompositionCalculator is Initializable {
     ) public pure returns (uint256 tokenAmountCreated) {
         require(_spotPrice != 0, "Price cant be zero");
         require(_totalTokenSupply != 0, "Token supply cant be zero");
-
         uint256 netTokenValue = getNetTokenValue(
             _cashPosition,
             _balance,
             _spotPrice
         );
-        uint256 netTokenValueTimesTokenAmount = DSMath.wmul(
-            netTokenValue,
-            _totalTokenSupply
-        );
-        require(
-            netTokenValueTimesTokenAmount != 0,
-            "netTokenValueTimesTokenAmount cant be zero"
-        );
 
-        tokenAmountCreated = DSMath.wdiv(_cash, netTokenValueTimesTokenAmount);
+        uint256 cashTimesTokenAmount = DSMath.wmul(_cash, _totalTokenSupply);
+
+        tokenAmountCreated = DSMath.wdiv(cashTimesTokenAmount, netTokenValue);
     }
 
     /**
@@ -1744,13 +1735,17 @@ contract CompositionCalculator is Initializable {
      * @dev Returns cash without fee
      * @param _cash The cash provided to create token
      * @param _mintingFee The minting fee to remove
+     * @param _minimumMintingFee The minimum minting fee in $ to remove
      */
-    function removeMintingFeeFromCash(uint256 _cash, uint256 _mintingFee)
-        public
-        pure
-        returns (uint256 cashAfterFee)
-    {
+    function removeMintingFeeFromCash(
+        uint256 _cash,
+        uint256 _mintingFee,
+        uint256 _minimumMintingFee
+    ) public pure returns (uint256 cashAfterFee) {
         uint256 creationFeeInCash = DSMath.wmul(_cash, _mintingFee);
+        if (_minimumMintingFee > creationFeeInCash) {
+            creationFeeInCash = _minimumMintingFee;
+        }
         cashAfterFee = DSMath.sub(_cash, creationFeeInCash);
     }
 
@@ -1792,7 +1787,12 @@ contract CompositionCalculator is Initializable {
         returns (uint256 cashAfterFee)
     {
         uint256 creationFee = persistentStorage.getMintingFee(_cash);
-        cashAfterFee = removeMintingFeeFromCash(_cash, creationFee);
+        uint256 minimumMintingFee = persistentStorage.minimumMintingFee();
+        cashAfterFee = removeMintingFeeFromCash(
+            _cash,
+            creationFee,
+            minimumMintingFee
+        );
     }
 
     /**
@@ -1803,9 +1803,11 @@ contract CompositionCalculator is Initializable {
     function getCurrentTokenAmountCreatedByCash(
         //Create
         uint256 _cash,
-        uint256 _spotPrice
+        uint256 _spotPrice,
+        uint256 _gasFee
     ) public view returns (uint256 tokenAmountCreated) {
-        uint256 cashAfterFee = removeCurrentMintingFeeFromCash(_cash);
+        uint256 cashAfterGas = DSMath.sub(_cash, _gasFee);
+        uint256 cashAfterFee = removeCurrentMintingFeeFromCash(cashAfterGas);
         tokenAmountCreated = getTokenAmountCreatedByCash(
             persistentStorage.getCashPositionPerTokenUnit(),
             persistentStorage.getBalancePerTokenUnit(),
@@ -1823,11 +1825,9 @@ contract CompositionCalculator is Initializable {
     function getCurrentCashAmountCreatedByToken(
         //Redeem
         uint256 _tokenAmount,
-        uint256 _spotPrice
+        uint256 _spotPrice,
+        uint256 _gasFee
     ) public view returns (uint256 cashFromTokenRedeem) {
-        uint256 totalTokenSupply = inverseToken.totalSupply();
-        require(totalTokenSupply != 0, "Token supply cant be zero");
-
         uint256 lendingFee = persistentStorage.getLendingFee();
         uint256 daysSinceLastRebalance = getDaysSinceLastRebalance() + 1;
 
@@ -1855,6 +1855,8 @@ contract CompositionCalculator is Initializable {
         cashFromTokenRedeem = removeCurrentMintingFeeFromCash(
             DSMath.sub(cashFromToken, fiatForLendingFee)
         );
+
+        cashFromTokenRedeem = DSMath.sub(cashFromTokenRedeem, _gasFee);
     }
 
     function getDaysSinceLastRebalance()
@@ -1951,7 +1953,6 @@ contract CompositionCalculator is Initializable {
         );
         uint256 daysSinceLastRebalance = getDaysSinceLastRebalance();
         uint256 minRebalanceAmount = persistentStorage.minRebalanceAmount();
-
         return
             calculatePCF(
                 cashPosition,
@@ -1959,7 +1960,8 @@ contract CompositionCalculator is Initializable {
                 _price,
                 _lendingFee,
                 daysSinceLastRebalance,
-                minRebalanceAmount
+                minRebalanceAmount,
+                persistentStorage.balancePrecision()
             );
     }
 
@@ -1984,5 +1986,13 @@ contract CompositionCalculator is Initializable {
 
     function wdiv(uint256 x, uint256 y) external pure returns (uint256 z) {
         z = DSMath.wdiv(x, y);
+    }
+
+    function floorBalance(uint256 a) public view returns (uint256) {
+        return floor(a, persistentStorage.balancePrecision());
+    }
+
+    function floor(uint256 a, uint256 precision) public pure returns (uint256) {
+        return (a / 10**(precision)) * 10**(precision);
     }
 }

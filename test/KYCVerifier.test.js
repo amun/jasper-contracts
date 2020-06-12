@@ -47,7 +47,9 @@ describe("KYCVerifier", function() {
     });
 
     it("allows bridge to whitelisted address", async function() {
-      await this.contract.setWhitelistedAddress(notOwner, { from: bridge });
+      await this.contract.setWhitelistedAddress(notOwner, {
+        from: bridge,
+      });
 
       const isAddressAdded = await this.contract.whitelistedAddresses(notOwner);
       expect(isAddressAdded).to.be.true;
@@ -55,9 +57,51 @@ describe("KYCVerifier", function() {
     });
 
     it("adds whitelisted address", async function() {
-      await this.contract.setWhitelistedAddress(notOwner, { from: owner });
+      await this.contract.setWhitelistedAddress(notOwner, {
+        from: owner,
+      });
 
       const isAddressAdded = await this.contract.whitelistedAddresses(notOwner);
+      expect(isAddressAdded).to.be.true;
+    });
+  });
+
+  describe("#batchWhitelistedAddress", function() {
+    it("does not allow a non owner to add multiple addresses", async function() {
+      await expectRevert(
+        this.contract.batchWhitelistedAddress([notOwner, owner], {
+          from: notOwner,
+        }),
+        "caller is not the owner or bridge"
+      );
+    });
+
+    it("does not allow an empty address to be whitelisted", async function() {
+      await expectRevert(
+        this.contract.batchWhitelistedAddress(
+          [owner, "0x0000000000000000000000000000000000000000"],
+          { from: owner }
+        ),
+        "adddress must not be empty"
+      );
+    });
+
+    it("allows bridge or owner to batch whitelisted addresses", async function() {
+      // as bridge
+      await this.contract.batchWhitelistedAddress([notOwner, owner], {
+        from: bridge,
+      });
+
+      let isAddressAdded = await this.contract.whitelistedAddresses(notOwner);
+      expect(isAddressAdded).to.be.true;
+      await this.contract.removeWhitelistedAddress(notOwner, { from: bridge });
+
+      // as owner
+      await this.contract.batchWhitelistedAddress([notOwner, owner, unlistedUser], {
+        from: owner,
+      });
+
+      isAddressAdded = await this.contract.whitelistedAddresses(unlistedUser);
       expect(isAddressAdded).to.be.true;
     });
   });

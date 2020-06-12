@@ -1,6 +1,3 @@
-
-// File: contracts/shared/Token/USDC.sol
-
 /**
  *Submitted for verification at Etherscan.io on 2020-03-03
  */
@@ -390,7 +387,7 @@ contract ERC20T is ERC20Basic {
  * @title FiatToken
  * @dev ERC20 Token backed by fiat reserves
  */
-contract USDC is OwnableUSDCT, ERC20T, Pausable, Blacklistable {
+contract USDT is OwnableUSDCT, ERC20T, Pausable, Blacklistable {
     using SafeMath for uint256;
 
     string public name;

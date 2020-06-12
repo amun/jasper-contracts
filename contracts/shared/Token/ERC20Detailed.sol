@@ -3,7 +3,7 @@ pragma solidity ^0.5.0;
 import "@openzeppelin/contracts-ethereum-package/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/upgrades/contracts/Initializable.sol";
 import "@openzeppelin/contracts-ethereum-package/contracts/ownership/Ownable.sol";
-import "../PersistentStorage.sol";
+import "../../short-tokens/Abstract/InterfaceStorage.sol";
 
 
 /**
@@ -13,7 +13,7 @@ contract ERC20Detailed is IERC20, Initializable, Ownable {
     string private _name;
     string private _symbol;
     uint8 private _decimals;
-    PersistentStorage public _persistenStorage;
+    InterfaceStorage public _persistenStorage;
 
     /**
      * @dev Sets the values for `name`, `symbol`, and `decimals`. All three of
@@ -31,7 +31,7 @@ contract ERC20Detailed is IERC20, Initializable, Ownable {
         _name = name;
         _symbol = symbol;
         _decimals = decimals;
-        _persistenStorage = PersistentStorage(persistenStorage);
+        _persistenStorage = InterfaceStorage(persistenStorage);
     }
 
     /**

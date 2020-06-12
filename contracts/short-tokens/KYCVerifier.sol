@@ -5,8 +5,9 @@ import "@openzeppelin/contracts-ethereum-package/contracts/ownership/Ownable.sol
 
 contract KYCVerifier is Ownable {
     address public bridge;
-
     mapping(address => bool) public whitelistedAddresses;
+
+    event WhitelistedAddressAdded(address);
 
     function initialize(address ownerAddress) public initializer {
         require(ownerAddress != address(0), "owner adddress must not be empty");
@@ -22,13 +23,21 @@ contract KYCVerifier is Ownable {
     }
 
     // @dev Set whitelisted addresses
-    function setWhitelistedAddress(address adddressToAdd)
+    function setWhitelistedAddress(address addressToAdd)
         public
         onlyOwnerOrBridge
     {
-        require(adddressToAdd != address(0), "adddress must not be empty");
+        require(addressToAdd != address(0), "adddress must not be empty");
 
-        whitelistedAddresses[adddressToAdd] = true;
+        whitelistedAddresses[addressToAdd] = true;
+
+        emit WhitelistedAddressAdded(addressToAdd);
+    }
+
+    function batchWhitelistedAddress(address[] calldata addresses) external {
+        for (uint8 index = 0; index < addresses.length; index++) {
+            setWhitelistedAddress(addresses[index]);
+        }
     }
 
     // @dev Remove whitelisted addresses

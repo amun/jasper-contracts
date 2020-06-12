@@ -74,7 +74,6 @@ describe("Modifier", function() {
     await this.cashPool.initialize(
       owner,
       this.kycVerifier.address,
-      this.storage.address,
       coldStorage,
       sixtyPercentInArrayFraction
     );
@@ -94,6 +93,7 @@ describe("Modifier", function() {
       owner,
       this.inverseToken.address,
       this.cashPool.address,
+      this.storage.address,
       this.compositionCalculator.address
     );
     await this.storage.setTokenSwapManager(this.tokenSwapManager.address, {
@@ -282,7 +282,7 @@ describe("Modifier", function() {
         this.cashPool.moveTokenfromPool(this.inverseToken.address, bridge, 5, {
           from: user
         }),
-        "caller is not the owner or token swap manager"
+        "caller is not the owner or an approved token swap manager"
       );
     });
   });

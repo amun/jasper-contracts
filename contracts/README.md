@@ -4,7 +4,7 @@
 
 - Creation and Redemption
 - Daily Rebalance and Threshold Rebalance
-- Composition PCF And Funding Rate [WIP]
+- Composition PCF And Funding Rate
 
 ### List of Smart Contracts:
 

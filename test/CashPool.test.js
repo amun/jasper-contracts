@@ -48,7 +48,7 @@ describe("CashPool", function() {
       { from: owner }
     ); //0.2%
     await persistentStorage.setTokenSwapManager(tokenSwap, { from: owner });
-
+  
     // initialize token
     token = await ERC20WithMinting.new({ from: owner });
     await token.initialize(
@@ -69,10 +69,10 @@ describe("CashPool", function() {
     await this.contract.initialize(
       owner,
       kycVerifier.address,
-      persistentStorage.address,
       coldStorage,
       sixtyPercentInArrayFraction
     );
+    await this.contract.addTokenManager(tokenSwap, {from: owner})
   });
 
   describe("#moveTokenToPool", function() {
@@ -90,7 +90,7 @@ describe("CashPool", function() {
           amountOfTokensToPool,
           { from: user }
         ),
-        "caller is not the owner or token swap manager"
+        "caller is not the owner or an approved token swap manager"
       );
     });
 
@@ -153,7 +153,7 @@ describe("CashPool", function() {
           amountOfTokensToPool,
           { from: anotherUser }
         ),
-        "caller is not the owner or token swap manager"
+        "caller is not the owner or an approved token swap manager"
       );
     });
 

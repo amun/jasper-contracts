@@ -5,13 +5,13 @@ import "solidity-util/lib/Strings.sol";
 import "@openzeppelin/contracts-ethereum-package/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts-ethereum-package/contracts/ownership/Ownable.sol";
 
-import "./CashPool.sol";
-import "./KYCVerifier.sol";
-import "./CompositionCalculator.sol";
-import "./Token/InverseToken.sol";
+import "./Abstract/InterfaceCashPool.sol";
+import "./Abstract/InterfaceKYCVerifier.sol";
+import "./Abstract/InterfaceCompositionCalculator.sol";
+import "./Abstract/InterfaceERC20.sol";
 
 import "./Abstract/InterfaceInverseToken.sol";
-import "./PersistentStorage.sol";
+import "./Abstract/InterfaceStorage.sol";
 import "./utils/Math.sol";
 
 
@@ -21,11 +21,11 @@ contract TokenSwapManager is Initializable, Ownable {
 
     address public inverseToken;
 
-    InverseToken public erc20;
-    KYCVerifier public kycVerifier;
-    CashPool public cashPool;
-    PersistentStorage public persistentStorage;
-    CompositionCalculator public compositionCalculator;
+    InterfaceERC20 public erc20;
+    InterfaceKYCVerifier public kycVerifier;
+    InterfaceCashPool public cashPool;
+    InterfaceStorage public persistentStorage;
+    InterfaceCompositionCalculator public compositionCalculator;
 
     event SuccessfulOrder(
         string orderType,
@@ -46,6 +46,7 @@ contract TokenSwapManager is Initializable, Ownable {
         address _owner,
         address _inverseToken,
         address _cashPool,
+        address _persistentStorage,
         address _compositionCalculator
     ) public initializer {
         initialize(_owner);
@@ -60,12 +61,12 @@ contract TokenSwapManager is Initializable, Ownable {
 
         inverseToken = _inverseToken;
 
-        cashPool = CashPool(_cashPool);
-        persistentStorage = PersistentStorage(
-            address(cashPool.persistentStorage())
+        cashPool = InterfaceCashPool(_cashPool);
+        persistentStorage = InterfaceStorage(_persistentStorage);
+        kycVerifier = InterfaceKYCVerifier(address(cashPool.kycVerifier()));
+        compositionCalculator = InterfaceCompositionCalculator(
+            _compositionCalculator
         );
-        kycVerifier = KYCVerifier(address(cashPool.kycVerifier()));
-        compositionCalculator = CompositionCalculator(_compositionCalculator);
     }
 
     //////////////// Create + Redeem Order Request ////////////////
@@ -315,7 +316,7 @@ contract TokenSwapManager is Initializable, Ownable {
         internal
         returns (uint256)
     {
-        erc20 = InverseToken(stablecoin);
+        erc20 = InterfaceERC20(stablecoin);
         uint256 exponent = 18 - erc20.decimals();
         return stablecoinValue / 10**exponent; // 6 decimal stable coin = 10**12
     }

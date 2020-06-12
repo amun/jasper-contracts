@@ -82,7 +82,6 @@ describe("TokenSwapManager", function() {
     await this.cashPool.initialize(
       owner,
       this.kycVerifier.address,
-      this.storage.address,
       coldStorage,
       sixtyPercentInArrayFraction
     );
@@ -102,11 +101,14 @@ describe("TokenSwapManager", function() {
       owner,
       this.inverseToken.address,
       this.cashPool.address,
+      this.storage.address,
       this.compositionCalculator.address
     );
     await this.storage.setTokenSwapManager(this.tokenSwapManager.address, {
       from: owner
     });
+    await this.cashPool.addTokenManager(this.tokenSwapManager.address, {from: owner})
+
     await this.storage.setBridge(bridge, { from: owner });
 
     this.timeout(115000);

@@ -749,28 +749,50 @@ interface InterfaceKYCVerifier {
     function isAddressWhitelisted(address) external view returns (bool);
 }
 
-// File: contracts/short-tokens/Abstract/InterfaceCompositionCalculator.sol
+// File: contracts/leverage-tokens/Abstract/InterfaceCalculator.sol
 
 pragma solidity ^0.5.0;
 
 
-interface InterfaceCompositionCalculator {
-    function getCurrentCashAmountCreatedByToken(
-        uint256 _tokenAmount,
-        uint256 _spotPrice,
-        uint256 _gasFee
-    ) external view returns (uint256);
+interface InterfaceCalculator {
 
-    function getCurrentTokenAmountCreatedByCash(
-        uint256 _cash,
-        uint256 _spotPrice,
-        uint256 _gasFee
-    ) external view returns (uint256);
+  function getTokensCreatedByCash(
+    uint256 mintingPrice,
+    uint256 cash,
+    uint256 gasFee
+  ) external view returns (uint256 tokensCreated) ;
 
-    function calculateDailyPCF(uint256 _price, uint256 _lendingFee)
-        external
-        view
-        returns (uint256, uint256, uint256, uint256, uint256, bool);
+  function getCashCreatedByTokens(
+    uint256 burningPrice,
+    uint256 elapsedTime,
+    uint256 tokens,
+    uint256 gasFee
+  ) external view returns (uint256 stablecoinRedeemed);
+
+
+  function calculateRebalanceValues(
+    uint256 _tokenValueNetFees,
+    uint256 _bestExecutionPrice,
+    uint256 _markPrice,
+    uint256 _notionalPreRebalance,
+    uint256 _targetLeverage
+  ) external view
+      returns (
+          uint256 notional,
+          int256 changeInNotional,
+          uint256 tokenValue
+      );
+
+
+  function removeCurrentMintingFeeFromCash(uint256 _cash)
+    external view returns (uint256 cashAfterFee);
+
+  function removeMintingFeeFromCash(
+    uint256 _cash,
+    uint256 _mintingFee,
+    uint256 _minimumMintingFee
+  ) external pure returns (uint256 cashAfterFee);
+
 }
 
 // File: contracts/short-tokens/Abstract/InterfaceERC20.sol
@@ -873,12 +895,12 @@ interface InterfaceInverseToken {
     );
 }
 
-// File: contracts/short-tokens/Abstract/InterfaceStorage.sol
+// File: contracts/leverage-tokens/Abstract/InterfaceStorageLeverage.sol
 
 pragma solidity ^0.5.0;
 
 
-interface InterfaceStorage {
+interface InterfaceStorageLeverage {
     function whitelistedAddresses(address) external view returns (bool);
 
     function isPaused() external view returns (bool);
@@ -889,17 +911,23 @@ interface InterfaceStorage {
 
     function bridge() external view returns (address);
 
-    function getCashPositionPerTokenUnit() external view returns (uint256);
+    function managementFee() external view returns (uint256);
 
-    function getBalancePerTokenUnit() external view returns (uint256);
+    function getExecutionPrice() external view returns (uint256);
+
+    function getMarkPrice() external view returns (uint256);
+
+    function getTokenValueAfterFees() external view returns (uint256);
+
+    function getNotional() external view returns (uint256);
+
+    function getTokenValue() external view returns (uint256);
+
+    function getChangeInNotional() external view returns (int256);
 
     function getMintingFee(uint256 cash) external view returns (uint256);
 
-    function getPrice() external view returns (uint256);
-
     function minimumMintingFee() external view returns (uint256);
-
-    function getLendingFee() external view returns (uint256);
 
     function minRebalanceAmount() external view returns (uint8);
 
@@ -915,23 +943,29 @@ interface InterfaceStorage {
         string calldata orderType,
         uint256 tokensGiven,
         uint256 tokensRecieved,
-        uint256 avgBlendedFee,
+        uint256 mintingPrice,
         uint256 orderIndex,
         bool overwrite
     ) external;
 
     function setAccounting(
-        uint256 _price,
-        uint256 _cashPositionPerTokenUnit,
-        uint256 _balancePerTokenUnit,
-        uint256 _lendingFee
+        uint256 _tokenValueNetFees,
+        uint256 _bestExecutionPrice,
+        uint256 _markPrice,
+        uint256 _notional,
+        int256 _changeInNotional,
+        uint256 _tokenValue,
+        uint256 _effectiveFundingRate
     ) external;
 
     function setAccountingForLastActivityDay(
-        uint256 _price,
-        uint256 _cashPositionPerTokenUnit,
-        uint256 _balancePerTokenUnit,
-        uint256 _lendingFee
+        uint256 _tokenValueNetFees,
+        uint256 _bestExecutionPrice,
+        uint256 _markPrice,
+        uint256 _notional,
+        int256 _changeInNotional,
+        uint256 _tokenValue,
+        uint256 _effectiveFundingRate
     ) external;
 }
 
@@ -1032,7 +1066,7 @@ library DSMath {
     }
 }
 
-// File: contracts/short-tokens/TokenSwapManager.sol
+// File: contracts/leverage-tokens/TokenSwapLeverage.sol
 
 pragma solidity ^0.5.0;
 
@@ -1048,7 +1082,7 @@ pragma solidity ^0.5.0;
 
 
 
-contract TokenSwapManager is Initializable, Ownable {
+contract TokenSwapLeverage is Initializable, Ownable {
     using Strings for string;
     using SafeMath for uint256;
 
@@ -1057,29 +1091,33 @@ contract TokenSwapManager is Initializable, Ownable {
     InterfaceERC20 public erc20;
     InterfaceKYCVerifier public kycVerifier;
     InterfaceCashPool public cashPool;
-    InterfaceStorage public persistentStorage;
-    InterfaceCompositionCalculator public compositionCalculator;
+    InterfaceStorageLeverage public persistentStorage;
+    InterfaceCalculator public compositionCalculator;
 
     event SuccessfulOrder(
         string orderType,
         address whitelistedAddress,
         uint256 tokensGiven,
         uint256 tokensRecieved,
-        address stablecoin
+        address stablecoin,
+        uint256 price
     );
 
     event RebalanceEvent(
-        uint256 price,
-        uint256 cashPositionPerTokenUnit,
-        uint256 balancePerTokenUnit,
-        uint256 lendingFee
+        uint256 tokenValueNetFees,
+        uint256 bestExecutionPrice,
+        uint256 markPrice,
+        uint256 notional,
+        int256 changeInNotional,
+        uint256 tokenValue,
+        uint256 effectiveFundingRate
     );
 
     function initialize(
         address _owner,
         address _inverseToken,
         address _cashPool,
-        address _persistentStorage,
+        address _storage,
         address _compositionCalculator
     ) public initializer {
         initialize(_owner);
@@ -1088,6 +1126,7 @@ contract TokenSwapManager is Initializable, Ownable {
             _owner != address(0) &&
                 _inverseToken != address(0) &&
                 _cashPool != address(0) &&
+                _storage != address(0) &&
                 _compositionCalculator != address(0),
             "addresses cannot be zero"
         );
@@ -1095,11 +1134,9 @@ contract TokenSwapManager is Initializable, Ownable {
         inverseToken = _inverseToken;
 
         cashPool = InterfaceCashPool(_cashPool);
-        persistentStorage = InterfaceStorage(_persistentStorage);
+        persistentStorage = InterfaceStorageLeverage(_storage);
         kycVerifier = InterfaceKYCVerifier(address(cashPool.kycVerifier()));
-        compositionCalculator = InterfaceCompositionCalculator(
-            _compositionCalculator
-        );
+        compositionCalculator = InterfaceCalculator(_compositionCalculator);
     }
 
     //////////////// Create + Redeem Order Request ////////////////
@@ -1110,8 +1147,7 @@ contract TokenSwapManager is Initializable, Ownable {
         bool success,
         uint256 tokensGiven,
         uint256 tokensRecieved,
-        uint256 avgBlendedFee,
-        uint256 executionPrice,
+        uint256 mintingPrice,
         address whitelistedAddress,
         address stablecoin,
         uint256 gasFee
@@ -1133,10 +1169,9 @@ contract TokenSwapManager is Initializable, Ownable {
         }
 
         // Check Tokens Recieved with Composition Calculator
-        uint256 _tokensRecieved = compositionCalculator
-            .getCurrentTokenAmountCreatedByCash(
+        uint256 _tokensRecieved = compositionCalculator.getTokensCreatedByCash(
+            mintingPrice,
             tokensGiven,
-            executionPrice,
             gasFee
         );
         require(
@@ -1150,7 +1185,7 @@ contract TokenSwapManager is Initializable, Ownable {
             "CREATE",
             tokensGiven,
             tokensRecieved,
-            avgBlendedFee,
+            mintingPrice,
             0,
             false
         );
@@ -1161,7 +1196,8 @@ contract TokenSwapManager is Initializable, Ownable {
             whitelistedAddress,
             tokensGiven,
             tokensRecieved,
-            stablecoin
+            stablecoin,
+            mintingPrice
         );
 
         // Mint Tokens to Address
@@ -1175,11 +1211,11 @@ contract TokenSwapManager is Initializable, Ownable {
         bool success,
         uint256 tokensGiven,
         uint256 tokensRecieved,
-        uint256 avgBlendedFee,
-        uint256 executionPrice,
+        uint256 burningPrice,
         address whitelistedAddress,
         address stablecoin,
-        uint256 gasFee
+        uint256 gasFee,
+        uint256 elapsedTime
     ) public onlyOwnerOrBridge() notPausedOrShutdown() returns (bool retVal) {
         // Require Whitelisted
         require(
@@ -1198,10 +1234,10 @@ contract TokenSwapManager is Initializable, Ownable {
         }
 
         // Check Cash Recieved with Composition Calculator
-        uint256 _tokensRecieved = compositionCalculator
-            .getCurrentCashAmountCreatedByToken(
+        uint256 _tokensRecieved = compositionCalculator.getCashCreatedByTokens(
+            burningPrice,
+            elapsedTime,
             tokensGiven,
-            executionPrice,
             gasFee
         );
         require(
@@ -1215,7 +1251,7 @@ contract TokenSwapManager is Initializable, Ownable {
             "REDEEM",
             tokensGiven,
             tokensRecieved,
-            avgBlendedFee,
+            burningPrice,
             0,
             false
         );
@@ -1225,7 +1261,8 @@ contract TokenSwapManager is Initializable, Ownable {
             tokensGiven,
             tokensRecieved,
             whitelistedAddress,
-            stablecoin
+            stablecoin,
+            burningPrice
         );
 
         // Burn Tokens to Address
@@ -1240,7 +1277,8 @@ contract TokenSwapManager is Initializable, Ownable {
         address whiteListedAddress,
         uint256 tokensGiven,
         uint256 tokensRecieved,
-        address stablecoin
+        address stablecoin,
+        uint256 price
     ) internal {
         require(
             tokensGiven != 0 && tokensRecieved != 0,
@@ -1252,7 +1290,8 @@ contract TokenSwapManager is Initializable, Ownable {
             whiteListedAddress,
             tokensGiven,
             tokensRecieved,
-            stablecoin
+            stablecoin,
+            price
         );
     }
 
@@ -1295,7 +1334,8 @@ contract TokenSwapManager is Initializable, Ownable {
         uint256 tokensGiven,
         uint256 tokensToRedeem,
         address whitelistedAddress,
-        address stablecoin
+        address stablecoin,
+        uint256 price
     ) internal {
         bool isSufficientFunds = isHotWalletSufficient(
             tokensToRedeem,
@@ -1313,7 +1353,8 @@ contract TokenSwapManager is Initializable, Ownable {
                 whitelistedAddress,
                 tokensGiven,
                 tokensToRedeem,
-                stablecoin
+                stablecoin,
+                price
             );
         } else {
             uint256 tokensOutstanding = persistentStorage
@@ -1328,7 +1369,8 @@ contract TokenSwapManager is Initializable, Ownable {
                 whitelistedAddress,
                 tokensGiven,
                 tokensToRedeem,
-                stablecoin
+                stablecoin,
+                price
             );
         }
     }
@@ -1357,130 +1399,52 @@ contract TokenSwapManager is Initializable, Ownable {
     ////////////////    Daily Rebalance     ////////////////
     //////////////// Threshold Rebalance    ////////////////
 
-    function _dailyRebalance(
-        uint256 _price,
-        uint256 _lendingFeeCalc,
-        uint256 _endCashPosition,
-        uint256 _endBalance,
-        uint256 _totalTokenSupply
-    ) internal view returns (uint256, uint256) {
-        // Rebalance Inputs : Trade Execution Price + Updated Loan Positions (repaid and outstanding)
-        // Rebalance Outputs : Cash Pool Adjustment + Updated PCF (calculated through CompositionCalculator.sol)
-        // Cash Pool Adjustment Handled Through Helper Functions Below
-        uint256 endBalance;
-        uint256 endCashPosition;
-        (, endBalance, endCashPosition, , , ) = compositionCalculator
-            .calculateDailyPCF(_price, _lendingFeeCalc);
-        uint256 totalTokenSupply = InterfaceInverseToken(inverseToken)
-            .totalSupply();
-
-        require(
-            totalTokenSupply != 0,
-            "The total token supply should not be zero."
-        );
-        require(
-            totalTokenSupply == _totalTokenSupply,
-            "The total token supply should match."
-        );
-        require(
-            endCashPosition == _endCashPosition,
-            "The cash positions should match."
-        );
-        require(endBalance == _endBalance, "The balance should match.");
-
-        uint256 cashPositionPerTokenUnit = DSMath.wdiv(
-            endCashPosition,
-            totalTokenSupply
-        );
-        uint256 balancePerTokenUnit = DSMath.wdiv(endBalance, totalTokenSupply);
-
-        return (cashPositionPerTokenUnit, balancePerTokenUnit);
-    }
-
     /**
-     * @dev Sets the accounting of today for the curent price
-     * @param _price The momentary price of the crypto
-     * @param _totalFee The total fees
-     * @param _lendingFee The blended lending fee of the balance
-     * @param _endCashPosition The total cashpostion on the product
-     * @param _endBalance The total dept on the product
-     * @param _totalTokenSupply The token supply with witch expected
+     * @dev Performs rebalance calculations and saves them in persistent storages
+     * @param _tokenValueNetFees The token value after fees are removed
+     * @param _bestExecutionPrice The best execution price for rebalancing
+     * @param _markPrice The Mark Price
+     * @param _notionalPreRebalance The notional amount before rebalance
+     * @param _targetLeverage The targetLeverage
+     * @param _effectiveFundingRate The effectiveFundingRate
      */
-    function dailyRebalance(
-        uint256 _price,
-        uint256 _totalFee,
-        uint256 _lendingFee,
-        uint256 _endCashPosition,
-        uint256 _endBalance,
-        uint256 _totalTokenSupply
+    function rebalance(
+        uint256 _tokenValueNetFees,
+        uint256 _bestExecutionPrice,
+        uint256 _markPrice,
+        uint256 _notionalPreRebalance,
+        uint256 _targetLeverage,
+        uint256 _effectiveFundingRate
     ) public onlyOwnerOrBridge() notPausedOrShutdown() {
-        // Rebalance Inputs : Trade Execution Price + Updated Loan Positions (repaid and outstanding)
-        // Rebalance Outputs : Cash Pool Adjustment + Updated PCF (calculated through CompositionCalculator.sol)
-        // Collater Pool Adjustment Handled Through Helper Functions Below
         (
-            uint256 cashPositionPerTokenUnit,
-            uint256 balancePerTokenUnit
-        ) = _dailyRebalance(
-            _price,
-            _totalFee,
-            _endCashPosition,
-            _endBalance,
-            _totalTokenSupply
+            uint256 notional,
+            int256 changeInNotional,
+            uint256 tokenValue
+        ) = compositionCalculator.calculateRebalanceValues(
+            _tokenValueNetFees,
+            _bestExecutionPrice,
+            _markPrice,
+            _notionalPreRebalance,
+            _targetLeverage
         );
+
         persistentStorage.setAccounting(
-            _price,
-            cashPositionPerTokenUnit,
-            balancePerTokenUnit,
-            _lendingFee
+            _tokenValueNetFees,
+            _bestExecutionPrice,
+            _markPrice,
+            notional,
+            changeInNotional,
+            tokenValue,
+            _effectiveFundingRate
         );
         emit RebalanceEvent(
-            _price,
-            cashPositionPerTokenUnit,
-            balancePerTokenUnit,
-            _lendingFee
-        );
-    }
-
-    /**
-     * @dev Sets the accounting of today for the curent price
-     * @param _price The momentary price of the crypto
-     * @param _lendingFee The blended lending fee of the balance
-     * @param _endCashPosition The total cashpostion on the product
-     * @param _endBalance The total dept on the product
-     * @param _totalTokenSupply The token supply with witch expected
-     */
-    function thresholdRebalance(
-        uint256 _price,
-        uint256 _lendingFee,
-        uint256 _endCashPosition,
-        uint256 _endBalance,
-        uint256 _totalTokenSupply
-    ) public onlyOwnerOrBridge() notPausedOrShutdown() {
-        // First Sanity Check Threshold Crossing
-        // Rebalance Inputs : Trade Execution Price + Updated Loan Positions (repaid and outstanding)
-        // Rebalance Outputs : Cash Pool Adjustment + Updated PCF (calculated through CompositionCalculator.sol)
-        // Cash Pool Adjustment Handled Through Helper Functions Below
-        (
-            uint256 cashPositionPerTokenUnit,
-            uint256 balancePerTokenUnit
-        ) = _dailyRebalance(
-            _price,
-            0,
-            _endCashPosition,
-            _endBalance,
-            _totalTokenSupply
-        );
-        persistentStorage.setAccountingForLastActivityDay(
-            _price,
-            cashPositionPerTokenUnit,
-            balancePerTokenUnit,
-            _lendingFee
-        );
-        emit RebalanceEvent(
-            _price,
-            cashPositionPerTokenUnit,
-            balancePerTokenUnit,
-            _lendingFee
+            _tokenValueNetFees,
+            _bestExecutionPrice,
+            _markPrice,
+            notional,
+            changeInNotional,
+            tokenValue,
+            _effectiveFundingRate
         );
     }
 
@@ -1517,6 +1481,26 @@ contract TokenSwapManager is Initializable, Ownable {
                 destinationAddress,
                 orderAmount
             );
+    }
+
+    function setCashPool(address _cashPool) public onlyOwner {
+        require(_cashPool != address(0), "adddress must not be empty");
+        cashPool = InterfaceCashPool(_cashPool);
+    }
+
+    function setStorage(address _storage) public onlyOwner {
+        require(_storage != address(0), "adddress must not be empty");
+        persistentStorage = InterfaceStorageLeverage(_storage);
+    }
+    
+    function setKycVerfier(address _kycVerifier) public onlyOwner {
+        require(_kycVerifier != address(0), "adddress must not be empty");
+        kycVerifier = InterfaceKYCVerifier(_kycVerifier);
+    }
+    
+    function setCalculator(address _calculator) public onlyOwner {
+        require(_calculator != address(0), "adddress must not be empty");
+        compositionCalculator = InterfaceCalculator(_calculator);
     }
 
     modifier onlyOwnerOrBridge() {

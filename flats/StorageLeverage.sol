@@ -767,7 +767,7 @@ library DSMath {
     }
 }
 
-// File: contracts/short-tokens/PersistentStorage.sol
+// File: contracts/leverage-tokens/StorageLeverage.sol
 
 pragma solidity ^0.5.0;
 
@@ -775,7 +775,7 @@ pragma solidity ^0.5.0;
 
 
 
-contract PersistentStorage is Ownable {
+contract StorageLeverage is Ownable {
     address public tokenSwapManager;
     address public bridge;
 
@@ -783,17 +783,20 @@ contract PersistentStorage is Ownable {
     bool public isShutdown;
 
     struct Accounting {
-        uint256 price;
-        uint256 cashPositionPerTokenUnit;
-        uint256 balancePerTokenUnit;
-        uint256 lendingFee;
+        uint256 tokenValueNetFees;
+        uint256 bestExecutionPrice;
+        uint256 markPrice;
+        uint256 notional;
+        int256 changeInNotional;
+        uint256 tokenValue;
+        uint256 effectiveFundingRate;
     }
 
     struct Order {
         string orderType;
         uint256 tokensGiven;
         uint256 tokensRecieved;
-        uint256 avgBlendedFee;
+        uint256 mintingPrice;
     }
 
     uint256 public lastActivityDay;
@@ -890,7 +893,7 @@ contract PersistentStorage is Ownable {
         string memory orderType,
         uint256 tokensGiven,
         uint256 tokensRecieved,
-        uint256 avgBlendedFee,
+        uint256 mintingPrice,
         uint256 orderIndex,
         bool overwrite
     ) public onlyOwnerOrTokenSwap() {
@@ -898,7 +901,7 @@ contract PersistentStorage is Ownable {
             orderType,
             tokensGiven,
             tokensRecieved,
-            avgBlendedFee
+            mintingPrice
         );
 
         if (!overwrite) {
@@ -907,7 +910,7 @@ contract PersistentStorage is Ownable {
                 orderType,
                 tokensGiven,
                 tokensRecieved,
-                avgBlendedFee,
+                mintingPrice,
                 orderIndex,
                 overwrite
             );
@@ -928,7 +931,7 @@ contract PersistentStorage is Ownable {
             string memory orderType,
             uint256 tokensGiven,
             uint256 tokensRecieved,
-            uint256 avgBlendedFee
+            uint256 mintingPrice
         )
     {
 
@@ -938,7 +941,7 @@ contract PersistentStorage is Ownable {
             orderAtIndex.orderType,
             orderAtIndex.tokensGiven,
             orderAtIndex.tokensRecieved,
-            orderAtIndex.avgBlendedFee
+            orderAtIndex.mintingPrice
         );
     }
 
@@ -951,7 +954,7 @@ contract PersistentStorage is Ownable {
         string memory orderType,
         uint256 tokensGiven,
         uint256 tokensRecieved,
-        uint256 avgBlendedFee,
+        uint256 mintingPrice,
         uint256 orderIndex,
         bool overwrite
     ) public onlyOwnerOrTokenSwap() {
@@ -959,7 +962,7 @@ contract PersistentStorage is Ownable {
             orderType,
             tokensGiven,
             tokensRecieved,
-            avgBlendedFee
+            mintingPrice
         );
 
         if (!overwrite) {
@@ -979,7 +982,7 @@ contract PersistentStorage is Ownable {
             string memory orderType,
             uint256 tokensGiven,
             uint256 tokensRecieved,
-            uint256 avgBlendedFee
+            uint256 mintingPrice
         )
     {
         Order storage orderAtIndex = allOrders[index];
@@ -987,7 +990,7 @@ contract PersistentStorage is Ownable {
             orderAtIndex.orderType,
             orderAtIndex.tokensGiven,
             orderAtIndex.tokensRecieved,
-            orderAtIndex.avgBlendedFee
+            orderAtIndex.mintingPrice
         );
     }
 
@@ -996,33 +999,51 @@ contract PersistentStorage is Ownable {
     function getAccounting(uint256 date)
         public
         view
-        returns (uint256, uint256, uint256, uint256)
+        returns (
+            uint256,
+            uint256,
+            uint256,
+            uint256,
+            int256,
+            uint256,
+            uint256
+        )
     {
+        Accounting[] storage accountingsForDate = accounting[date];
+        uint256 lastIndex = accountingsForDate.length - 1;
         return (
-            accounting[date][accounting[date].length - 1].price,
-            accounting[date][accounting[date].length - 1]
-                .cashPositionPerTokenUnit,
-            accounting[date][accounting[date].length - 1].balancePerTokenUnit,
-            accounting[date][accounting[date].length - 1].lendingFee
+            accountingsForDate[lastIndex].tokenValueNetFees,
+            accountingsForDate[lastIndex].bestExecutionPrice,
+            accountingsForDate[lastIndex].markPrice,
+            accountingsForDate[lastIndex].notional,
+            accountingsForDate[lastIndex].changeInNotional,
+            accountingsForDate[lastIndex].tokenValue,
+            accountingsForDate[lastIndex].effectiveFundingRate
         );
     }
 
     // @dev Set accounting values for the day
     function setAccounting(
-        uint256 _price,
-        uint256 _cashPositionPerTokenUnit,
-        uint256 _balancePerTokenUnit,
-        uint256 _lendingFee
+        uint256 _tokenValueNetFees,
+        uint256 _bestExecutionPrice,
+        uint256 _markPrice,
+        uint256 _notional,
+        int256 _changeInNotional,
+        uint256 _tokenValue,
+        uint256 _effectiveFundingRate
     ) external onlyOwnerOrTokenSwap() {
         (uint256 year, uint256 month, uint256 day) = DateTimeLibrary
             .timestampToDate(block.timestamp);
         uint256 today = year * 10000 + month * 100 + day;
         accounting[today].push(
             Accounting(
-                _price,
-                _cashPositionPerTokenUnit,
-                _balancePerTokenUnit,
-                _lendingFee
+                _tokenValueNetFees,
+                _bestExecutionPrice,
+                _markPrice,
+                _notional,
+                _changeInNotional,
+                _tokenValue,
+                _effectiveFundingRate
             )
         );
         lastActivityDay = today;
@@ -1031,17 +1052,23 @@ contract PersistentStorage is Ownable {
 
     // @dev Set accounting values for the day
     function setAccountingForLastActivityDay(
-        uint256 _price,
-        uint256 _cashPositionPerTokenUnit,
-        uint256 _balancePerTokenUnit,
-        uint256 _lendingFee
+        uint256 _tokenValueNetFees,
+        uint256 _bestExecutionPrice,
+        uint256 _markPrice,
+        uint256 _notional,
+        int256 _changeInNotional,
+        uint256 _tokenValue,
+        uint256 _effectiveFundingRate
     ) external onlyOwnerOrTokenSwap() {
         accounting[lastActivityDay].push(
             Accounting(
-                _price,
-                _cashPositionPerTokenUnit,
-                _balancePerTokenUnit,
-                _lendingFee
+                _tokenValueNetFees,
+                _bestExecutionPrice,
+                _markPrice,
+                _notional,
+                _changeInNotional,
+                _tokenValue,
+                _effectiveFundingRate
             )
         );
         emit AccountingValuesSet(lastActivityDay);
@@ -1064,35 +1091,45 @@ contract PersistentStorage is Ownable {
     }
 
     // @dev Returns price
-    function getPrice() public view returns (uint256 price) {
+    function getExecutionPrice() public view returns (uint256 price) {
         return
             accounting[lastActivityDay][accounting[lastActivityDay].length - 1]
-                .price;
+                .bestExecutionPrice;
     }
 
-    // @dev Returns cash position amount
-    function getCashPositionPerTokenUnit()
-        public
-        view
-        returns (uint256 amount)
-    {
+    // @dev Returns price
+    function getMarkPrice() public view returns (uint256 price) {
         return
             accounting[lastActivityDay][accounting[lastActivityDay].length - 1]
-                .cashPositionPerTokenUnit;
+                .markPrice;
     }
 
-    // @dev Returns borrowed crypto amount
-    function getBalancePerTokenUnit() public view returns (uint256 amount) {
+    // @dev Returns token value net of fees
+    function getTokenValueAfterFees() public view returns (uint256 amount) {
         return
             accounting[lastActivityDay][accounting[lastActivityDay].length - 1]
-                .balancePerTokenUnit;
+                .tokenValueNetFees;
     }
 
-    // @dev Returns lending fee
-    function getLendingFee() public view returns (uint256 lendingRate) {
+    // @dev Returns notional amount
+    function getNotional() public view returns (uint256 amount) {
         return
             accounting[lastActivityDay][accounting[lastActivityDay].length - 1]
-                .lendingFee;
+                .notional;
+    }
+
+    // @dev Returns change in notional
+    function getChangeInNotional() public view returns (int256 amount) {
+        return
+            accounting[lastActivityDay][accounting[lastActivityDay].length - 1]
+                .changeInNotional;
+    }
+
+    // @dev Returns token value
+    function getTokenValue() public view returns (uint256 lendingRate) {
+        return
+            accounting[lastActivityDay][accounting[lastActivityDay].length - 1]
+                .tokenValue;
     }
 
     // @dev Sets last minting fee
@@ -1150,20 +1187,23 @@ contract PersistentStorage is Ownable {
     function getMintingFee(uint256 cash) public view returns (uint256) {
         // Define Start + End Index
         uint256 startIndex = 0;
-        uint256 endIndex = mintingFeeBracket.length - 1;
-        uint256 middleIndex = endIndex / 2;
+        if (mintingFeeBracket.length > 0) {
+            uint256 endIndex = mintingFeeBracket.length - 1;
+            uint256 middleIndex = endIndex / 2;
 
-        if (cash <= mintingFeeBracket[middleIndex]) {
-            endIndex = middleIndex;
-        } else {
-            startIndex = middleIndex + 1;
-        }
+            if (cash <= mintingFeeBracket[middleIndex]) {
+                endIndex = middleIndex;
+            } else {
+                startIndex = middleIndex + 1;
+            }
 
-        for (uint256 i = startIndex; i <= endIndex; i++) {
-            if (cash <= mintingFeeBracket[i]) {
-                return mintingFee[mintingFeeBracket[i]];
+            for (uint256 i = startIndex; i <= endIndex; i++) {
+                if (cash <= mintingFeeBracket[i]) {
+                    return mintingFee[mintingFeeBracket[i]];
+                }
             }
         }
+
         return mintingFee[~uint256(0)];
     }
 
